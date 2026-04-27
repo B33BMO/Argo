@@ -1,0 +1,36 @@
+{
+  "name": "roo",
+  "version": "0.1.0",
+  "description": "Roo — a TUI for interacting with open-source LLMs with tool calling",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "roo": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "glob": "^11.0.0",
+    "ink": "^5.0.1",
+    "ink-text-input": "^6.0.0",
+    "ollama": "^0.5.11",
+    "openai": "^4.77.0",
+    "react": "^18.3.1",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "tsup": "^8.3.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
