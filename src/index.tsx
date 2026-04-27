@@ -30,9 +30,9 @@ async function main() {
   // Handle help
   if (flags.help || flags.h) {
     console.log(`
-roo · your open-source AI companion
+argo · your open-source AI companion
 
-Usage: roo [options]
+Usage: argo [options]
 
 Options:
   --provider, -p    Provider type: 'ollama' or 'openai' (default: openai-compatible)
@@ -64,7 +64,7 @@ Commands (type in input):
   /tokens           Show token usage
 
 Configuration:
-  Config file: ~/.roo/config.yaml
+  Config file: ~/.argo/config.yaml
 `);
     process.exit(0);
   }
@@ -85,7 +85,7 @@ Configuration:
 
   // Resolve provider:
   //   1. CLI flags override everything
-  //   2. Otherwise use ~/.roo/providers.yaml active provider
+  //   2. Otherwise use ~/.argo/providers.yaml active provider
   //   3. Falls back to legacy config.yaml provider block
   const cliProviderType = flags.provider || flags.p;
   const cliModel = flags.model || flags.m;

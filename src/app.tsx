@@ -40,7 +40,7 @@ interface AppProps {
   soundEnabled?: boolean;
 }
 
-const DEFAULT_SYSTEM_PROMPT = `You are Roo, a helpful AI assistant with access to tools for file operations, shell commands, and web requests.
+const DEFAULT_SYSTEM_PROMPT = `You are Argo, a helpful AI assistant with access to tools for file operations, shell commands, and web requests.
 
 When helping users:
 1. Use tools to explore and modify the filesystem as needed

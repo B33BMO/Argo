@@ -1,4 +1,4 @@
-// Color theme system for Roo
+// Color theme system for Argo
 
 export interface Theme {
   name: string;

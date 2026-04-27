@@ -125,7 +125,7 @@ function exportToHtml(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${options.title || 'Roo Conversation'}</title>
+  <title>${options.title || 'Argo Conversation'}</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -153,7 +153,7 @@ function exportToHtml(
   </style>
 </head>
 <body>
-  <h1>${options.title || 'Roo Conversation'}</h1>
+  <h1>${options.title || 'Argo Conversation'}</h1>
   <div class="meta">Exported: ${new Date().toLocaleString()}</div>
   ${messageHtml}
 </body>
@@ -248,7 +248,7 @@ export function exportConversation(
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const filename = `roo-export-${timestamp}.${extension}`;
+  const filename = `argo-export-${timestamp}.${extension}`;
 
   return { content, filename, mimeType };
 }

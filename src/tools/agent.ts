@@ -6,7 +6,7 @@ import type { LLMProvider } from '../providers/types.js';
 export function createAgentTool(provider: LLMProvider): Tool {
   return {
     name: 'agent',
-    description: `Spawn a focused sub-agent. **Call this tool multiple times in a single turn to run agents in parallel** — Roo will execute every agent call in the same turn concurrently and you'll get all results back at once. Use this for fan-out research, splitting independent subtasks, or comparing approaches. Available agents: ${listAgents().map(a => `${a.name} (${a.description})`).join('; ')}`,
+    description: `Spawn a focused sub-agent. **Call this tool multiple times in a single turn to run agents in parallel** — Argo will execute every agent call in the same turn concurrently and you'll get all results back at once. Use this for fan-out research, splitting independent subtasks, or comparing approaches. Available agents: ${listAgents().map(a => `${a.name} (${a.description})`).join('; ')}`,
     parameters: {
       type: 'object',
       properties: {

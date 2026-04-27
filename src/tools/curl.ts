@@ -66,7 +66,7 @@ export const curlTool: Tool = {
       const response = await fetch(url, {
         method,
         headers: {
-          'User-Agent': 'Roo/1.0',
+          'User-Agent': 'Argo/1.0',
           ...headers,
         },
         body: body || undefined,

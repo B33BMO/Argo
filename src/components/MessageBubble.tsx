@@ -9,7 +9,7 @@ interface MessageBubbleProps {
 
 const ROLE_CONFIG = {
   user: { label: 'you', color: 'cyan' as const, dot: 'cyan' as const },
-  assistant: { label: 'roo', color: 'white' as const, dot: 'green' as const },
+  assistant: { label: 'argo', color: 'white' as const, dot: 'green' as const },
   system: { label: 'system', color: 'yellow' as const, dot: 'yellow' as const },
   tool: { label: 'tool', color: 'magenta' as const, dot: 'magenta' as const },
 };
@@ -59,7 +59,7 @@ export const StreamingMessage = memo(function StreamingMessage({
     <Box flexDirection="column" marginY={0}>
       <Box>
         <Text color="green">● </Text>
-        <Text color="white" bold>roo</Text>
+        <Text color="white" bold>argo</Text>
       </Box>
       <Box marginLeft={2} flexDirection="column">
         <Markdown>{content}</Markdown>

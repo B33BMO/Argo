@@ -1,11 +1,11 @@
 {
-  "name": "roo",
+  "name": "argo",
   "version": "0.1.0",
-  "description": "Roo — a TUI for interacting with open-source LLMs with tool calling",
+  "description": "Argo — a TUI for interacting with open-source LLMs with tool calling",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "roo": "./dist/index.js"
+    "argo": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup",

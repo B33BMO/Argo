@@ -82,7 +82,7 @@ export interface Command {
 const BUILTIN_COMMANDS: Command[] = [
   { name: 'help', description: 'Show available commands', aliases: ['h', '?'] },
   { name: 'clear', description: 'Clear conversation history', aliases: ['cls'] },
-  { name: 'exit', description: 'Exit Roo', aliases: ['quit', 'q'] },
+  { name: 'exit', description: 'Exit Argo', aliases: ['quit', 'q'] },
   { name: 'model', description: 'Switch model', args: '<model-name>' },
   { name: 'session', description: 'Session management', args: '[list|new|load|save|delete]' },
   { name: 'providers', description: 'Manage LLM providers (add, switch, edit)', aliases: ['provider'] },

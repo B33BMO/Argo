@@ -84,7 +84,7 @@ export function SkillsPanel({ isOpen, onClose, onSelectSkill }: SkillsPanelProps
         {items.length === 0 ? (
           <Text color="gray" dimColor>
             {tab === 'skills'
-              ? 'No skills found. Create one in ~/.roo/skills/'
+              ? 'No skills found. Create one in ~/.argo/skills/'
               : 'No agents available'}
           </Text>
         ) : tab === 'skills' ? (

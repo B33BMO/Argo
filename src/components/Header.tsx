@@ -10,7 +10,7 @@ export const Header = memo(function Header({ subtitle }: HeaderProps) {
     <Box marginBottom={1} justifyContent="space-between">
       <Box>
         <Text color="green" bold>
-          roo
+          argo
         </Text>
         <Text color="gray"> · </Text>
         <Text color="cyan" dimColor>

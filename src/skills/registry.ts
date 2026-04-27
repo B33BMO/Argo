@@ -4,8 +4,8 @@ import * as path from 'path';
 import * as os from 'os';
 import type { Skill, SkillFrontmatter } from './types.js';
 
-const USER_SKILLS_DIR = path.join(os.homedir(), '.roo', 'skills');
-const PROJECT_SKILLS_DIR = '.roo/skills';
+const USER_SKILLS_DIR = path.join(os.homedir(), '.argo', 'skills');
+const PROJECT_SKILLS_DIR = '.argo/skills';
 
 class SkillRegistry {
   private skills: Map<string, Skill> = new Map();

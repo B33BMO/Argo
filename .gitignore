@@ -27,9 +27,9 @@ Thumbs.db
 *.swo
 *~
 
-# Roo runtime data (user-specific, contains keys + history)
-.roo/
-~/.roo/
+# Argo runtime data (user-specific, contains keys + history)
+.argo/
+~/.argo/
 
 # Stray test/scratch files
 hello.sh

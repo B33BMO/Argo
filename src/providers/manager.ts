@@ -18,7 +18,7 @@ export interface ProviderConfig {
   defaultModel?: string;
 }
 
-const PROVIDERS_FILE = path.join(os.homedir(), '.roo', 'providers.yaml');
+const PROVIDERS_FILE = path.join(os.homedir(), '.argo', 'providers.yaml');
 
 // Built-in presets — users can pick one and just paste their API key
 export const BUILTIN_PRESETS: ProviderConfig[] = [

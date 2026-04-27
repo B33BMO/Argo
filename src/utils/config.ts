@@ -3,7 +3,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 import YAML from 'yaml';
 
-export interface RooConfig {
+export interface ArgoConfig {
   provider: {
     type: 'ollama' | 'openai-compatible';
     baseUrl?: string;
@@ -23,7 +23,7 @@ export interface RooConfig {
   systemPrompt?: string;
 }
 
-const DEFAULT_CONFIG: RooConfig = {
+const DEFAULT_CONFIG: ArgoConfig = {
   provider: {
     type: 'openai-compatible',
     baseUrl: 'https://llama.coleman-it.com/v1',
@@ -42,14 +42,14 @@ const DEFAULT_CONFIG: RooConfig = {
 };
 
 export function getConfigDir(): string {
-  return join(homedir(), '.roo');
+  return join(homedir(), '.argo');
 }
 
 export function getConfigPath(): string {
   return join(getConfigDir(), 'config.yaml');
 }
 
-export async function loadConfig(): Promise<RooConfig> {
+export async function loadConfig(): Promise<ArgoConfig> {
   try {
     const configPath = getConfigPath();
     const content = await readFile(configPath, 'utf-8');
@@ -60,7 +60,7 @@ export async function loadConfig(): Promise<RooConfig> {
   }
 }
 
-export async function saveConfig(config: RooConfig): Promise<void> {
+export async function saveConfig(config: ArgoConfig): Promise<void> {
   const configDir = getConfigDir();
   await mkdir(configDir, { recursive: true });
 
@@ -69,7 +69,7 @@ export async function saveConfig(config: RooConfig): Promise<void> {
   await writeFile(configPath, content, 'utf-8');
 }
 
-export async function initConfig(): Promise<RooConfig> {
+export async function initConfig(): Promise<ArgoConfig> {
   const configPath = getConfigPath();
 
   try {

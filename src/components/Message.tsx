@@ -14,7 +14,7 @@ export function Message({ message }: MessageProps) {
       case 'user':
         return { label: 'You', color: 'cyan' as const };
       case 'assistant':
-        return { label: 'roo', color: 'green' as const };
+        return { label: 'argo', color: 'green' as const };
       case 'system':
         return { label: 'System', color: 'yellow' as const };
       case 'tool':

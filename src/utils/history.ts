@@ -26,7 +26,7 @@ export interface SessionSummary {
   preview: string; // First user message preview
 }
 
-const HISTORY_DIR = path.join(os.homedir(), '.roo', 'history');
+const HISTORY_DIR = path.join(os.homedir(), '.argo', 'history');
 
 async function ensureHistoryDir(): Promise<void> {
   await fs.mkdir(HISTORY_DIR, { recursive: true });
