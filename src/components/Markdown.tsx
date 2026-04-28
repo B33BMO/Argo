@@ -166,7 +166,7 @@ export function Markdown({ children }: MarkdownProps) {
       const text = headerMatch[2];
       const colors = ['green', 'cyan', 'blue', 'magenta', 'yellow', 'white'] as const;
       elements.push(
-        <Box key={key++} marginY={level === 1 ? 1 : 0}>
+        <Box key={key++}>
           <Text bold color={colors[level - 1]}>
             {level === 1 ? '═══ ' : level === 2 ? '── ' : ''}
             {text}
@@ -247,10 +247,12 @@ export function Markdown({ children }: MarkdownProps) {
       continue;
     }
 
-    // Empty line
+    // Empty line — collapse consecutive blanks into a single gap, skip trailing.
     if (line.trim() === '') {
-      elements.push(<Box key={key++} height={1} />);
-      i++;
+      while (i < lines.length && lines[i].trim() === '') i++;
+      if (i < lines.length) {
+        elements.push(<Box key={key++} height={1} />);
+      }
       continue;
     }
 

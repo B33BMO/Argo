@@ -182,6 +182,30 @@ export async function duplicateSession(id: string): Promise<Session | null> {
   return duplicate;
 }
 
+/**
+ * Fork a session — create a new session whose messages are a copy of the
+ * source up to (and not including) `forkAtIndex`. If forkAtIndex is omitted,
+ * forks at the current end (full copy under a new id and name).
+ */
+export async function forkSession(
+  source: Session,
+  forkAtIndex?: number,
+  newName?: string
+): Promise<Session> {
+  await ensureHistoryDir();
+  const sliceEnd = typeof forkAtIndex === 'number' ? forkAtIndex : source.messages.length;
+  const fork: Session = {
+    id: generateId(),
+    name: newName || `${source.name} (fork)`,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    messages: source.messages.slice(0, sliceEnd),
+    metadata: source.metadata ? { ...source.metadata } : undefined,
+  };
+  await saveSession(fork);
+  return fork;
+}
+
 // Auto-save helper for use with useChat
 export function createAutoSaver(sessionId: string, debounceMs = 2000) {
   let timeout: NodeJS.Timeout | null = null;

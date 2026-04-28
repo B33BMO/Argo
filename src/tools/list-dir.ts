@@ -1,6 +1,7 @@
 import { readdir, stat } from 'fs/promises';
 import { resolve, isAbsolute, join } from 'path';
 import type { Tool, ToolContext, ToolResult } from './types.js';
+import { isSensitivePath } from '../utils/secrets.js';
 
 interface FileInfo {
   name: string;
@@ -95,7 +96,8 @@ export const listDirTool: Tool = {
         .map((f) => {
           const prefix = f.type === 'directory' ? '[DIR] ' : '      ';
           const size = f.size !== undefined ? ` (${formatSize(f.size)})` : '';
-          return `${prefix}${f.name}${size}`;
+          const sensitive = isSensitivePath(join(absolutePath, f.name)) ? ' [sensitive — read blocked]' : '';
+          return `${prefix}${f.name}${size}${sensitive}`;
         })
         .join('\n');
 

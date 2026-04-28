@@ -9,6 +9,7 @@ export default defineConfig({
   sourcemap: true,
   dts: true,
   banner: {
-    js: '#!/usr/bin/env node',
+    js: '#!/usr/bin/env node\nimport { createRequire as __argoCreateRequire } from "module"; const require = __argoCreateRequire(import.meta.url);',
   },
+  external: ['node-pty'],
 });

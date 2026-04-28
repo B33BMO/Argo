@@ -48,19 +48,19 @@ export const ToolCallCard = memo(
             {' '}{name}
           </Text>
           {argSummary && (
-            <Text color="gray" dimColor>
+            <Text color="gray">
               {' '}{argSummary}
             </Text>
           )}
           {duration !== undefined && (
-            <Text color="gray" dimColor>
+            <Text color="gray">
               {' '}· {(duration / 1000).toFixed(2)}s
             </Text>
           )}
         </Box>
         {status === 'error' && error && (
           <Box marginLeft={2}>
-            <Text color="red" dimColor>
+            <Text color="red">
               {error.length > 200 ? error.slice(0, 200) + '...' : error}
             </Text>
           </Box>

@@ -83,15 +83,15 @@ export function Input({ onSubmit, placeholder = '', disabled = false }: InputPro
   const isPlaceholder = !value && placeholder;
 
   return (
-    <Box>
-      <Text color="cyan" bold>
-        {'> '}
+    <Box borderStyle="round" borderColor={disabled ? 'gray' : 'cyan'} paddingX={1}>
+      <Text color={disabled ? 'gray' : 'cyan'} bold>
+        {'❯ '}
       </Text>
-      <Text color={isPlaceholder ? 'gray' : undefined} dimColor={!!isPlaceholder}>
+      <Text color={isPlaceholder ? 'gray' : 'white'}>
         {displayValue}
       </Text>
       {!disabled && (
-        <Text backgroundColor="white" color="black">
+        <Text backgroundColor="cyan" color="black">
           {' '}
         </Text>
       )}

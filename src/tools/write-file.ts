@@ -1,6 +1,7 @@
 import { writeFile, mkdir, access, constants } from 'fs/promises';
 import { resolve, isAbsolute, dirname } from 'path';
 import type { Tool, ToolContext, ToolResult } from './types.js';
+import { isInsideArgoHome } from '../utils/workspace.js';
 
 export const writeFileTool: Tool = {
   name: 'write_file',
@@ -31,6 +32,15 @@ export const writeFileTool: Tool = {
     const absolutePath = isAbsolute(filePath)
       ? filePath
       : resolve(context.cwd, filePath);
+
+    // Safety: refuse to write inside ~/.argo (would clobber soul, sessions, etc)
+    if (isInsideArgoHome(absolutePath)) {
+      return {
+        success: false,
+        output: '',
+        error: `Refusing to write inside ~/.argo (Argo's runtime data). Path: ${absolutePath}`,
+      };
+    }
 
     // Check if file exists (for confirmation on new files)
     let isNewFile = false;

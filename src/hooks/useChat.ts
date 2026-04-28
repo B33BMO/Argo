@@ -3,7 +3,14 @@ import type { LLMProvider, Message, ToolCall, StreamChunk } from '../providers/t
 import type { Tool, ToolContext, ToolResult } from '../tools/types.js';
 import { toolRegistry } from '../tools/index.js';
 import { createAgentTool } from '../tools/agent.js';
+import { createPartyTool } from '../tools/party.js';
 import { skillRegistry } from '../skills/registry.js';
+import { loadSoul, formatSoulForPrompt, ensureSoulExists } from '../soul/soul.js';
+import { reflect, shouldReflect } from '../soul/reflect.js';
+import { getWorkspace, workspaceSystemContext, sessionSystemContext } from '../utils/workspace.js';
+import { loadMemory, formatMemoryForPrompt } from '../utils/memory.js';
+import { recordChars } from '../utils/tokenRate.js';
+import { sessionRegistry } from '../sessions/shell.js';
 
 export interface ChatState {
   messages: Message[];
@@ -26,11 +33,25 @@ export interface UseChatOptions {
 export function useChat(options: UseChatOptions) {
   const { provider, systemPrompt, onToolCall, onToolResult, requestConfirmation } = options;
 
-  // Re-register agent tool every time the provider changes (hot-swap support)
+  // Re-register agent + party tools every time the provider changes (hot-swap support)
   useEffect(() => {
     toolRegistry.register(createAgentTool(provider));
+    toolRegistry.register(createPartyTool(provider));
     skillRegistry.load();
+    ensureSoulExists();
   }, [provider]);
+
+  // Cached soul content — reload after reflection
+  const soulRef = useRef<string>('');
+  useEffect(() => {
+    loadSoul().then(s => { soulRef.current = formatSoulForPrompt(s); });
+  }, []);
+
+  // Cached project memory — reload via reloadMemory()
+  const memoryRef = useRef<string>('');
+  useEffect(() => {
+    loadMemory().then(m => { memoryRef.current = formatMemoryForPrompt(m); });
+  }, []);
 
   const [state, setState] = useState<ChatState>({
     messages: [],
@@ -44,8 +65,59 @@ export function useChat(options: UseChatOptions) {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Skill injection — set by /skill <name> to attach a skill to the next message
+  const pendingSkillRef = useRef<string>('');
+
+  // Streaming-state throttle: buffer chunks in refs and flush to React state at
+  // most every 60ms. The previous approach setState'd on every token (then
+  // throttled the *displayed* value), which still re-rendered the parent
+  // 50–100×/s and produced visible flicker.
+  const reasoningBufRef = useRef('');
+  const responseBufRef = useRef('');
+  const flushPendingRef = useRef(false);
+  const lastFlushRef = useRef(0);
+  const FLUSH_INTERVAL_MS = 60;
+
+  const flushStream = useCallback(() => {
+    flushPendingRef.current = false;
+    lastFlushRef.current = Date.now();
+    setState(s => {
+      if (
+        s.currentReasoning === reasoningBufRef.current &&
+        s.currentResponse === responseBufRef.current
+      ) return s;
+      return {
+        ...s,
+        currentReasoning: reasoningBufRef.current,
+        currentResponse: responseBufRef.current,
+      };
+    });
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushPendingRef.current) return;
+    const elapsed = Date.now() - lastFlushRef.current;
+    if (elapsed >= FLUSH_INTERVAL_MS) {
+      flushStream();
+      return;
+    }
+    flushPendingRef.current = true;
+    setTimeout(flushStream, FLUSH_INTERVAL_MS - elapsed);
+  }, [flushStream]);
+
+  const reloadMemory = useCallback(async () => {
+    memoryRef.current = formatMemoryForPrompt(await loadMemory());
+  }, []);
+
+  const injectSkill = useCallback((body: string) => {
+    pendingSkillRef.current = pendingSkillRef.current
+      ? pendingSkillRef.current + '\n\n' + body
+      : body;
+  }, []);
+
+  const workspace = getWorkspace();
   const toolContext: ToolContext = {
-    cwd: process.cwd(),
+    cwd: workspace.cwd,
     env: process.env as Record<string, string>,
     requestConfirmation,
   };
@@ -92,12 +164,16 @@ export function useChat(options: UseChatOptions) {
 
       // Match skills based on user input
       const matchedSkills = skillRegistry.match(content);
-      const skillContext = matchedSkills.length > 0
+      const matchedSkillContext = matchedSkills.length > 0
         ? '\n\n--- Active Skills ---\n' + matchedSkills
             .slice(0, 3)
             .map(s => `## ${s.frontmatter.name}\n${s.body}`)
             .join('\n\n')
         : '';
+      // Append any explicitly-injected skill from /skill <name>, then clear
+      const injected = pendingSkillRef.current;
+      pendingSkillRef.current = '';
+      const skillContext = matchedSkillContext + (injected ? '\n\n--- Injected Skill ---\n' + injected : '');
 
       const userMessage: Message = { role: 'user', content };
       const newMessages = [...state.messages, userMessage];
@@ -121,9 +197,22 @@ export function useChat(options: UseChatOptions) {
         let responseContent = '';
         const toolCalls: ToolCall[] = [];
 
+        // Reset live-stream state at the top of each iteration so a previous
+        // iteration's text doesn't bleed into the next iteration's empty bubble.
+        reasoningBufRef.current = '';
+        responseBufRef.current = '';
+        setState((s) => ({
+          ...s,
+          currentReasoning: '',
+          currentResponse: '',
+          pendingToolCalls: [],
+        }));
+
         try {
+          const activeSession = sessionRegistry.active.info;
+          const sessionCtx = sessionSystemContext(activeSession.id, activeSession.kind, activeSession.label);
           const stream = provider.chat(currentMessages, {
-            systemPrompt: (systemPrompt || '') + skillContext,
+            systemPrompt: (systemPrompt || '') + workspaceSystemContext(workspace) + sessionCtx + soulRef.current + memoryRef.current + skillContext,
             tools: toolRegistry.getAll(),
           });
 
@@ -134,16 +223,14 @@ export function useChat(options: UseChatOptions) {
 
             if (chunk.type === 'reasoning' && chunk.content) {
               reasoningContent += chunk.content;
-              setState((s) => ({
-                ...s,
-                currentReasoning: reasoningContent,
-              }));
+              recordChars(chunk.content.length);
+              reasoningBufRef.current = reasoningContent;
+              scheduleFlush();
             } else if (chunk.type === 'text' && chunk.content) {
               responseContent += chunk.content;
-              setState((s) => ({
-                ...s,
-                currentResponse: responseContent,
-              }));
+              recordChars(chunk.content.length);
+              responseBufRef.current = responseContent;
+              scheduleFlush();
             } else if (chunk.type === 'tool_call' && chunk.toolCall) {
               toolCalls.push(chunk.toolCall);
               setState((s) => ({
@@ -154,6 +241,9 @@ export function useChat(options: UseChatOptions) {
               setState((s) => ({ ...s, error: chunk.error! }));
             }
           }
+
+          // Final flush of streamed buffers before we move on
+          flushStream();
 
           // Add assistant message
           const assistantMessage: Message = {
@@ -184,6 +274,17 @@ export function useChat(options: UseChatOptions) {
         currentResponse: '',
         pendingToolCalls: [],
       }));
+
+      // Background soul reflection — don't await, let it run async
+      const userTurns = currentMessages.filter(m => m.role === 'user').length;
+      if (shouldReflect(userTurns, 8)) {
+        reflect(provider, currentMessages).then(result => {
+          if (result?.changed) {
+            // Reload cached soul for the next request
+            loadSoul().then(s => { soulRef.current = formatSoulForPrompt(s); });
+          }
+        }).catch(() => { /* silent fail — reflection is non-critical */ });
+      }
     },
     [state.messages, state.isLoading, provider, systemPrompt, executeToolCalls]
   );
@@ -210,10 +311,17 @@ export function useChat(options: UseChatOptions) {
     });
   }, []);
 
+  const setMessages = useCallback((messages: Message[]) => {
+    setState(s => ({ ...s, messages }));
+  }, []);
+
   return {
     ...state,
     sendMessage,
     abort,
     clearHistory,
+    reloadMemory,
+    injectSkill,
+    setMessages,
   };
 }

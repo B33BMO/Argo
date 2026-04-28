@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises';
 import { glob } from 'glob';
 import { resolve, isAbsolute } from 'path';
 import type { Tool, ToolContext, ToolResult } from './types.js';
+import { SENSITIVE_GLOB_IGNORES, isSensitivePath, redactSecrets } from '../utils/secrets.js';
 
 const MAX_MATCHES = 100;
 const MAX_LINE_LENGTH = 200;
@@ -57,13 +58,14 @@ export const grepTool: Tool = {
     try {
       const regex = new RegExp(pattern, ignoreCase ? 'gi' : 'g');
 
-      // Find files to search
-      const files = await glob(include, {
+      // Find files to search — sensitive files are excluded so contents
+      // never leak into grep output.
+      const files = (await glob(include, {
         cwd,
         absolute: true,
         nodir: true,
-        ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
-      });
+        ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**', ...SENSITIVE_GLOB_IGNORES],
+      })).filter(p => !isSensitivePath(p));
 
       const matches: Match[] = [];
       let truncated = false;
@@ -84,6 +86,8 @@ export const grepTool: Tool = {
               if (lineContent.length > MAX_LINE_LENGTH) {
                 lineContent = lineContent.slice(0, MAX_LINE_LENGTH) + '...';
               }
+              // Defense in depth: scrub matched lines that contain secret-like values.
+              lineContent = redactSecrets(lineContent).output;
 
               matches.push({
                 file: file.replace(cwd + '/', ''),

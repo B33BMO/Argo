@@ -42,6 +42,7 @@ Options:
   --icons, -i       Icon style: 'nerd', 'unicode', or 'ascii' (default: nerd)
   --vim             Enable vim keybindings
   --no-sound        Disable sound notifications
+  --resume, -r      Open the conversation picker on launch
   --help, -h        Show this help message
 
 Keyboard Shortcuts:
@@ -54,6 +55,12 @@ Keyboard Shortcuts:
   Ctrl+C            Abort request / Exit
   Tab               Toggle thinking panel
 
+Bash mode:
+  !cmd              Run cmd in active shell session
+  !ssh user@host    Open a persistent SSH session — argo's tools run on it too
+  !exit             Close active session, return to local
+  !sessions         List active sessions
+
 Commands (type in input):
   /help             Show available commands
   /clear            Clear conversation
@@ -61,10 +68,25 @@ Commands (type in input):
   /copy             Copy last code block
   /session          Manage sessions
   /providers        Manage LLM providers
+  /soul             View or reset Argo's evolving personality
+  /mcp              List active MCP servers
   /tokens           Show token usage
+
+@mentions:
+  Type @path/to/file in any message to attach the file's contents.
+  Examples: @src/app.tsx, @./README.md, @~/notes.md
+
+MCP (Model Context Protocol):
+  Configure servers in ~/.argo/mcp.yaml — they spawn at startup
+  and their tools auto-register as mcp__<server>__<tool>.
 
 Configuration:
   Config file: ~/.argo/config.yaml
+
+Tip:
+  Argo uses your current shell directory as its workspace.
+  Run \`argo\` in any project to scope it there.
+  Install globally: \`npm install -g .\` from the argo source dir.
 `);
     process.exit(0);
   }
@@ -82,6 +104,7 @@ Configuration:
 
   // Parse other options
   const vimMode = flags.vim === 'true';
+  const resumeMode = flags.resume === 'true' || flags.r === 'true';
 
   // Resolve provider:
   //   1. CLI flags override everything
@@ -131,6 +154,7 @@ Configuration:
       systemPrompt={config.systemPrompt}
       vimMode={vimMode}
       soundEnabled={soundEnabled}
+      resumeOnLaunch={resumeMode}
     />
   );
 

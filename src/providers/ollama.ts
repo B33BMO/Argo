@@ -168,8 +168,23 @@ export class OllamaProvider implements LLMProvider {
 
       yield { type: 'done' };
     } catch (err) {
-      const error = err as Error;
-      yield { type: 'error', error: error.message };
+      const error = err as Error & { status_code?: number };
+      let msg = error.message || String(err);
+
+      // Detect when the server returned HTML (means we hit a website, not the API)
+      if (msg.includes('<!doctype html') || msg.includes('<html') || msg.includes('Unexpected token')) {
+        msg = `Got HTML response from ${this.baseUrl} — this usually means:
+  · Wrong baseUrl (Ollama Cloud uses https://ollama.com, but model must be a *-cloud variant like gpt-oss:120b-cloud)
+  · Missing or invalid API key (Ollama Cloud requires one)
+  · The endpoint is the marketing site, not an Ollama API
+Original error: ${error.message}`;
+      } else if (msg.includes('401') || msg.includes('Unauthorized')) {
+        msg = `Authentication failed at ${this.baseUrl}. Check your API key (Ctrl+R → providers).`;
+      } else if (msg.includes('404')) {
+        msg = `Endpoint not found at ${this.baseUrl}. Verify the URL is correct and points to an Ollama-compatible API. (Original: ${error.message})`;
+      }
+
+      yield { type: 'error', error: msg };
     }
   }
 

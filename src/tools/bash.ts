@@ -1,30 +1,24 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import type { Tool, ToolContext, ToolResult } from './types.js';
-
-const execAsync = promisify(exec);
+import { sessionRegistry } from '../sessions/shell.js';
+import { bashLooksSecretFishing, redactSecrets } from '../utils/secrets.js';
 
 const MAX_OUTPUT_LENGTH = 50000;
 
 export const bashTool: Tool = {
   name: 'bash',
   description:
-    'Execute a bash command in the shell. Use this for running commands, installing packages, git operations, and other terminal tasks.',
+    'Execute a bash command in the active shell session. The active session may be local OR a remote SSH session — check the system context for which. Commands persist state (cwd, env vars, etc) within the active session across calls.',
   parameters: {
     type: 'object',
     properties: {
       command: {
         type: 'string',
-        description: 'The bash command to execute',
+        description: 'The bash command to execute in the active shell session',
       },
       timeout: {
         type: 'number',
-        description: 'Timeout in milliseconds (default: 30000)',
-        default: 30000,
-      },
-      cwd: {
-        type: 'string',
-        description: 'Working directory for the command (defaults to current directory)',
+        description: 'Timeout in milliseconds (default: 120000)',
+        default: 120000,
       },
     },
     required: ['command'],
@@ -35,25 +29,23 @@ export const bashTool: Tool = {
     context: ToolContext
   ): Promise<ToolResult> {
     const command = params.command as string;
-    const timeout = (params.timeout as number) || 30000;
-    const cwd = (params.cwd as string) || context.cwd;
+    const timeout = (params.timeout as number) || 120000;
 
-    // Check for potentially dangerous commands
     const dangerousPatterns = [
       /\brm\s+(-rf?|--recursive)\s+[\/~]/i,
-      /\bsudo\b/i,
+      /\bsudo\s+rm\b/i,
       /\bmkfs\b/i,
       /\bdd\s+if=/i,
-      />\s*\/dev\//i,
+      />\s*\/dev\/(sd|hd|nvme|disk)/i,
+      /:\(\)\{\s*:\|:&\s*\}/, // fork bomb
     ];
 
-    const isDangerous = dangerousPatterns.some((pattern) =>
-      pattern.test(command)
-    );
+    const isDangerous = dangerousPatterns.some((pattern) => pattern.test(command));
 
     if (isDangerous && context.requestConfirmation) {
+      const session = sessionRegistry.active;
       const confirmed = await context.requestConfirmation(
-        `This command looks potentially dangerous:\n${command}\n\nDo you want to proceed?`
+        `This command looks potentially dangerous:\n  ${command}\n\nSession: ${session.info.label} (${session.info.kind})\n\nDo you want to proceed?`
       );
       if (!confirmed) {
         return {
@@ -64,39 +56,58 @@ export const bashTool: Tool = {
       }
     }
 
-    try {
-      const { stdout, stderr } = await execAsync(command, {
-        cwd,
-        timeout,
-        maxBuffer: 1024 * 1024 * 10, // 10MB
-        env: { ...process.env, ...context.env },
-      });
-
-      let output = stdout + (stderr ? `\nstderr:\n${stderr}` : '');
-      let truncated = false;
-
-      if (output.length > MAX_OUTPUT_LENGTH) {
-        output = output.slice(0, MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
-        truncated = true;
+    // Secrets-fishing guard: env, printenv, cat .env, anything in ~/.ssh
+    if (bashLooksSecretFishing(command)) {
+      if (!context.requestConfirmation) {
+        return {
+          success: false,
+          output: '',
+          error: 'Refused: this command would expose credentials (env vars, SSH keys, .env files, etc.). Ask the user to run it themselves with !cmd if they intend to.',
+        };
       }
-
-      return {
-        success: true,
-        output,
-        truncated,
-      };
-    } catch (err) {
-      const error = err as { stdout?: string; stderr?: string; message?: string; code?: number };
-
-      let output = '';
-      if (error.stdout) output += error.stdout;
-      if (error.stderr) output += (output ? '\n' : '') + error.stderr;
-
-      return {
-        success: false,
-        output,
-        error: error.message || 'Command failed',
-      };
+      const ok = await context.requestConfirmation(
+        `This command would expose credentials to the model:\n  ${command}\n\nProceed?`
+      );
+      if (!ok) {
+        return {
+          success: false,
+          output: '',
+          error: 'Refused by user — credential-exposing command',
+        };
+      }
     }
+
+    const session = sessionRegistry.active;
+
+    // For local sessions, prefix with cd to context.cwd so the LLM's commands
+    // resolve from the workspace. For ssh/custom sessions, the remote shell
+    // owns its own cwd.
+    let cmd = command;
+    if (session.info.kind === 'local' && context.cwd) {
+      cmd = `cd ${JSON.stringify(context.cwd)} 2>/dev/null; ${command}`;
+    }
+
+    const result = await session.run(cmd, timeout);
+
+    let output = result.output;
+    // Defense in depth — scrub anything that looks like a credential before
+    // the model sees it, even if the command itself wasn't flagged.
+    output = redactSecrets(output).output;
+    let truncated = false;
+    if (output.length > MAX_OUTPUT_LENGTH) {
+      output = output.slice(0, MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
+      truncated = true;
+    }
+
+    if (result.exitCode === 0) {
+      return { success: true, output, truncated };
+    }
+
+    return {
+      success: false,
+      output,
+      error: `Exit code ${result.exitCode} on session "${session.info.label}"`,
+      truncated,
+    };
   },
 };

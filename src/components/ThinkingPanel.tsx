@@ -23,11 +23,11 @@ export const ThinkingPanel = memo(function ThinkingPanel({
     <Box flexDirection="column" marginY={0} paddingLeft={2}>
       <Box>
         {isStreaming ? <Spinner color="yellow" /> : <Text color="yellow">●</Text>}
-        <Text color="yellow" dimColor>
+        <Text color="yellow" bold>
           {' '}thinking
         </Text>
         {isCollapsed && (
-          <Text color="gray" dimColor>
+          <Text color="gray">
             {' '}({total} lines · Tab)
           </Text>
         )}
@@ -35,7 +35,7 @@ export const ThinkingPanel = memo(function ThinkingPanel({
       {!isCollapsed && (
         <Box marginLeft={2} flexDirection="column">
           {tail.map((line, i) => (
-            <Text key={i} color="gray" dimColor wrap="truncate-end">
+            <Text key={i} color="gray" wrap="truncate-end">
               {line}
             </Text>
           ))}
@@ -49,7 +49,7 @@ export const ThinkingIndicator = memo(function ThinkingIndicator() {
   return (
     <Box paddingLeft={2}>
       <Spinner color="yellow" />
-      <Text color="yellow" dimColor> working</Text>
+      <Text color="yellow" bold> working</Text>
       <ThinkingDots color="yellow" />
     </Box>
   );

@@ -32,9 +32,9 @@ export const BUILTIN_PRESETS: ProviderConfig[] = [
   {
     id: 'ollama-cloud',
     label: 'Ollama Cloud',
-    type: 'ollama',
-    baseUrl: 'https://ollama.com',
-    defaultModel: 'gpt-oss:120b',
+    type: 'openai-compatible',
+    baseUrl: 'https://ollama.com/v1',
+    defaultModel: 'qwen3-coder:480b-cloud',
   },
   {
     id: 'llama-coleman',

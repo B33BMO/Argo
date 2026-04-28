@@ -1,26 +1,26 @@
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 
-interface HeaderProps {
-  subtitle?: string;
-}
-
-export const Header = memo(function Header({ subtitle }: HeaderProps) {
+export const Header = memo(function Header() {
   return (
     <Box marginBottom={1} justifyContent="space-between">
       <Box>
-        <Text color="green" bold>
-          argo
-        </Text>
+        <Text color="green" bold>▲</Text>
+        <Text color="cyan" bold> argo</Text>
         <Text color="gray"> · </Text>
-        <Text color="cyan" dimColor>
-          your open-source companion
-        </Text>
+        <Text color="cyan">:D</Text>
       </Box>
       <Box>
-        <Text color="gray" dimColor>
-          ^P cmd · ^O sessions · ^S skills · ^R providers · ^L clear
-        </Text>
+        <Text color="gray">^P </Text>
+        <Text color="white">cmd</Text>
+        <Text color="gray">  ^O </Text>
+        <Text color="white">sessions</Text>
+        <Text color="gray">  ^S </Text>
+        <Text color="white">skills</Text>
+        <Text color="gray">  ^R </Text>
+        <Text color="white">providers</Text>
+        <Text color="gray">  ^L </Text>
+        <Text color="white">clear</Text>
       </Box>
     </Box>
   );
@@ -36,7 +36,7 @@ export const Divider = memo(function Divider({
   color = 'gray',
 }: DividerProps) {
   return (
-    <Text color={color as any} dimColor>
+    <Text color={color as any}>
       {'─'.repeat(width)}
     </Text>
   );

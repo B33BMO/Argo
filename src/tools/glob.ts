@@ -1,6 +1,7 @@
 import { glob } from 'glob';
 import { resolve, isAbsolute } from 'path';
 import type { Tool, ToolContext, ToolResult } from './types.js';
+import { SENSITIVE_GLOB_IGNORES, isSensitivePath } from '../utils/secrets.js';
 
 const MAX_RESULTS = 500;
 
@@ -38,13 +39,13 @@ export const globTool: Tool = {
       : context.cwd;
 
     try {
-      const matches = await glob(pattern, {
+      const matches = (await glob(pattern, {
         cwd,
         absolute: false,
         nodir: true,
-        ignore: ['**/node_modules/**', '**/.git/**'],
+        ignore: ['**/node_modules/**', '**/.git/**', ...SENSITIVE_GLOB_IGNORES],
         maxDepth: 20,
-      });
+      })).filter(p => !isSensitivePath(p));
 
       if (matches.length === 0) {
         return {

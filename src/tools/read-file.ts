@@ -1,6 +1,12 @@
 import { readFile } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
 import type { Tool, ToolContext, ToolResult } from './types.js';
+import {
+  isSensitivePath,
+  requestSensitiveAccess,
+  redactSecrets,
+  sensitiveDenialMessage,
+} from '../utils/secrets.js';
 
 const MAX_OUTPUT_LENGTH = 100000;
 const MAX_LINES = 2000;
@@ -40,8 +46,18 @@ export const readFileTool: Tool = {
       ? filePath
       : resolve(context.cwd, filePath);
 
+    // Sensitive-files guard — refuse silently unless the user explicitly approves.
+    if (isSensitivePath(absolutePath)) {
+      const allow = await requestSensitiveAccess(context, absolutePath, 'Read');
+      if (!allow) {
+        return { success: false, output: '', error: sensitiveDenialMessage(filePath) };
+      }
+    }
+
     try {
-      const content = await readFile(absolutePath, 'utf-8');
+      const rawContent = await readFile(absolutePath, 'utf-8');
+      const { output: scrubbed, redactions } = redactSecrets(rawContent);
+      const content = scrubbed;
       const lines = content.split('\n');
       const totalLines = lines.length;
 
@@ -65,6 +81,10 @@ export const readFileTool: Tool = {
         output =
           output.slice(0, MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
         truncated = true;
+      }
+
+      if (redactions > 0) {
+        info.push(`Auto-redacted ${redactions} value(s) that looked like secrets.`);
       }
 
       if (info.length > 0) {

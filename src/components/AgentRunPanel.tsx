@@ -15,6 +15,7 @@ interface AgentRun {
   duration?: number;
   startTime: number;
   error?: string;
+  liveText: string;
 }
 
 /**
@@ -40,7 +41,15 @@ export const AgentRunPanel = memo(function AgentRunPanel() {
               toolsUsed: [],
               status: 'running',
               startTime: Date.now(),
+              liveText: '',
             });
+            break;
+
+          case 'text':
+            if (existing) {
+              const merged = (existing.liveText + event.content).slice(-2000);
+              next.set(event.runId, { ...existing, liveText: merged });
+            }
             break;
 
           case 'iteration':
@@ -136,6 +145,12 @@ const AgentRunRow = memo(function AgentRunRow({ run }: AgentRunRowProps) {
     ? run.task.slice(0, 47) + '...'
     : run.task;
 
+  // Last non-empty line of streamed output, for live preview
+  const lastLine = run.liveText
+    ? run.liveText.split('\n').reverse().find(l => l.trim()) || ''
+    : '';
+  const livePreview = lastLine.length > 70 ? '…' + lastLine.slice(-69) : lastLine;
+
   return (
     <Box flexDirection="column">
       <Box>
@@ -154,6 +169,11 @@ const AgentRunRow = memo(function AgentRunRow({ run }: AgentRunRowProps) {
             : `${run.toolsUsed.length} tools · ${(elapsed / 1000).toFixed(1)}s${run.error ? ` · ${run.error.slice(0, 50)}` : ''}`}
         </Text>
       </Box>
+      {run.status === 'running' && livePreview && (
+        <Box marginLeft={2}>
+          <Text color="cyan" dimColor>↳ {livePreview}</Text>
+        </Box>
+      )}
     </Box>
   );
 });
