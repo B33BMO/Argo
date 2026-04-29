@@ -1,12 +1,28 @@
 import { readdir, stat } from 'fs/promises';
 import { resolve, isAbsolute, join } from 'path';
-import type { Tool, ToolContext, ToolResult } from './types.js';
+import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
+import { validInput, invalidInput } from './types.js';
 import { isSensitivePath } from '../utils/secrets.js';
 
 interface FileInfo {
   name: string;
   type: 'file' | 'directory';
   size?: number;
+}
+
+interface ListDirParams {
+  path?: string;
+  show_hidden?: boolean;
+}
+
+function validateParams(params: Record<string, unknown>): ValidationResult {
+  if (params.path !== undefined && typeof params.path !== 'string') {
+    return invalidInput('path must be a string');
+  }
+  if (params.show_hidden !== undefined && typeof params.show_hidden !== 'boolean') {
+    return invalidInput('show_hidden must be a boolean');
+  }
+  return validInput(params as Record<string, unknown>);
 }
 
 export const listDirTool: Tool = {
@@ -28,12 +44,15 @@ export const listDirTool: Tool = {
     required: [],
   },
 
+  isReadOnly: () => true,
+
+  validateInput: validateParams,
+
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolResult> {
-    const dirPath = (params.path as string) || '.';
-    const showHidden = (params.show_hidden as boolean) || false;
+    const { path: dirPath = '.', show_hidden: showHidden = false } = params as ListDirParams;
 
     const absolutePath = isAbsolute(dirPath)
       ? dirPath

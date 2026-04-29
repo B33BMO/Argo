@@ -1,7 +1,28 @@
 import { writeFile, mkdir, access, constants } from 'fs/promises';
 import { resolve, isAbsolute, dirname } from 'path';
-import type { Tool, ToolContext, ToolResult } from './types.js';
+import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
+import { validInput, invalidInput } from './types.js';
 import { isInsideArgoHome } from '../utils/workspace.js';
+import { 
+  loadPermissions, 
+  isWritePathAllowed, 
+  allowWritePath 
+} from '../utils/permissions.js';
+
+interface WriteFileParams {
+  path: string;
+  content: string;
+}
+
+function validateParams(params: Record<string, unknown>): ValidationResult {
+  if (typeof params.path !== 'string' || params.path.trim() === '') {
+    return invalidInput('path must be a non-empty string');
+  }
+  if (typeof params.content !== 'string') {
+    return invalidInput('content must be a string');
+  }
+  return validInput(params as Record<string, unknown>);
+}
 
 export const writeFileTool: Tool = {
   name: 'write_file',
@@ -22,12 +43,15 @@ export const writeFileTool: Tool = {
     required: ['path', 'content'],
   },
 
+  isReadOnly: () => false,
+
+  validateInput: validateParams,
+
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolResult> {
-    const filePath = params.path as string;
-    const content = params.content as string;
+    const { path: filePath, content } = params as unknown as WriteFileParams;
 
     const absolutePath = isAbsolute(filePath)
       ? filePath
@@ -42,26 +66,23 @@ export const writeFileTool: Tool = {
       };
     }
 
-    // Check if file exists (for confirmation on new files)
-    let isNewFile = false;
-    try {
-      await access(absolutePath, constants.F_OK);
-    } catch {
-      isNewFile = true;
-    }
+    // Check permissions
+    const permissions = await loadPermissions();
+    const isAllowed = isWritePathAllowed(permissions, absolutePath);
 
-    // Request confirmation for new files if configured
-    if (isNewFile && context.requestConfirmation) {
+    if (!isAllowed && context.requestConfirmation) {
       const confirmed = await context.requestConfirmation(
-        `Create new file: ${absolutePath}?`
+        `Write to file: ${absolutePath}?\n\nThis will ${await checkFileExists(absolutePath) ? 'overwrite' : 'create'} the file.`
       );
       if (!confirmed) {
         return {
           success: false,
           output: '',
-          error: 'File creation cancelled by user',
+          error: 'File write cancelled by user',
         };
       }
+      // Remember permission for this session
+      await allowWritePath(absolutePath);
     }
 
     try {
@@ -89,3 +110,12 @@ export const writeFileTool: Tool = {
     }
   },
 };
+
+async function checkFileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}

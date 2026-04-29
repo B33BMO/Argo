@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { icon } from '../utils/icons.js';
-import { searchCommands, BUILTIN_COMMANDS, type CompletionItem } from '../utils/autocomplete.js';
+import { searchCommands, type CompletionItem } from '../utils/autocomplete.js';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -137,78 +137,3 @@ function CommandItem({ item, isSelected }: CommandItemProps) {
   );
 }
 
-// Autocomplete dropdown for inline suggestions
-interface AutocompleteDropdownProps {
-  items: CompletionItem[];
-  selectedIndex: number;
-  onSelect: (item: CompletionItem) => void;
-  maxItems?: number;
-}
-
-export function AutocompleteDropdown({
-  items,
-  selectedIndex,
-  onSelect,
-  maxItems = 8,
-}: AutocompleteDropdownProps) {
-  if (items.length === 0) return null;
-
-  const displayItems = items.slice(0, maxItems);
-
-  return (
-    <Box
-      flexDirection="column"
-      borderStyle="single"
-      borderColor="gray"
-      paddingX={1}
-      marginTop={1}
-    >
-      {displayItems.map((item, i) => (
-        <Box key={item.value}>
-          <Text color={i === selectedIndex ? 'cyan' : 'gray'}>
-            {i === selectedIndex ? icon('chevronRight') : ' '}
-          </Text>
-          <Text color={item.type === 'directory' ? 'blue' : item.type === 'command' ? 'magenta' : 'white'}>
-            {item.display}
-          </Text>
-          {item.description && (
-            <Text color="gray" dimColor>
-              {' '}{item.description}
-            </Text>
-          )}
-        </Box>
-      ))}
-      {items.length > maxItems && (
-        <Text color="gray" dimColor>
-          ... and {items.length - maxItems} more
-        </Text>
-      )}
-    </Box>
-  );
-}
-
-// Quick action bar (for common actions)
-interface QuickAction {
-  key: string;
-  label: string;
-  action: () => void;
-}
-
-interface QuickActionBarProps {
-  actions: QuickAction[];
-}
-
-export function QuickActionBar({ actions }: QuickActionBarProps) {
-  return (
-    <Box>
-      {actions.map((action, i) => (
-        <React.Fragment key={action.key}>
-          {i > 0 && <Text color="gray"> │ </Text>}
-          <Text color="gray">[</Text>
-          <Text color="cyan">{action.key}</Text>
-          <Text color="gray">] {action.label}</Text>
-        </React.Fragment>
-      ))}
-    </Box>
-  );
-}

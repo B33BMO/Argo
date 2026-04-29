@@ -1,11 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { Header } from './components/Header.js';
-import { MessageBubble, StreamingMessage } from './components/MessageBubble.js';
+import { MessageBubble } from './components/MessageBubble.js';
 import { Input } from './components/Input.js';
-import { ThinkingPanel, ThinkingIndicator } from './components/ThinkingPanel.js';
 import { StatusLine } from './components/StatusLine.js';
-import { ToolCallCard } from './components/ToolCallCard.js';
 import { AgentRunPanel } from './components/AgentRunPanel.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { SessionPicker } from './components/SessionPicker.js';
@@ -28,6 +26,7 @@ import { buildProvider, type ProviderConfig } from './providers/manager.js';
 import { toolRegistry } from './tools/index.js';
 import { createAgentTool } from './tools/agent.js';
 import { createPartyTool } from './tools/party.js';
+import { getPeakRate } from './utils/tokenRate.js';
 
 function toolRegistryReregister(provider: LLMProvider) {
   toolRegistry.register(createAgentTool(provider));
@@ -55,21 +54,19 @@ interface AppProps {
   resumeOnLaunch?: boolean;
 }
 
-const DEFAULT_SYSTEM_PROMPT = `You are Argo, a helpful AI assistant with access to tools for file operations, shell commands, and web requests.
+// Keep this lean. Long, cautionary system prompts make smaller models loop on
+// safe operations (list_dir, read_file) and never commit to writes. The tool
+// layer enforces the secret-file ban itself; we don't need to belabor it here.
+const DEFAULT_SYSTEM_PROMPT = `You are Argo, an AI coding companion with tools for file ops, shell, and HTTP.
 
-When helping users:
-1. Use tools to explore and modify the filesystem as needed
-2. Execute shell commands to accomplish tasks
-3. Be concise but thorough in your explanations
-4. If you encounter an error, explain what went wrong and try to fix it
+Behavior:
+- Pick a plan, execute it, and finish. Don't re-explore the same directory or re-read the same file just to "check".
+- After at most a couple of rounds of exploration, COMMIT to producing the final answer or write_file output.
+- When the task is to write a file, actually call write_file — don't just describe what you'd write.
+- If a tool refuses (sensitive file, permission), don't try to bypass; tell the user briefly and move on.
+- Be concise. Lead with the answer or the change, not a preamble.
 
-Security policy (NON-NEGOTIABLE):
-- Never read \`.env\`, \`.env.*\`, \`.envrc\`, \`.netrc\`, \`.npmrc\`, \`.git-credentials\`, anything under \`.ssh\`/\`.aws\`/\`.gcloud\`/\`.azure\`/\`.kube\`, or any file named \`credentials\`/\`secrets\` or with extensions \`.pem\`/\`.key\`/\`.p12\`/\`.pfx\`.
-- Never run \`env\`, \`printenv\`, or \`cat .env*\` — they expose credentials to the conversation transcript.
-- The tools will refuse these by default. Don't try to bypass with bash, curl, or alternative reads.
-- If you need a config value, ask the user to paste only the relevant line.
-
-Available tools: bash, read_file, write_file, edit_file, glob, grep, list_dir, curl`;
+Tools: bash, read_file, write_file, edit_file, glob, grep, list_dir, curl, agent, party.`;
 
 export function App({
   provider: initialProvider,
@@ -88,12 +85,13 @@ export function App({
   const [modelName, setModelName] = useState(initialModelName);
 
   // UI state
-  const [thinkingCollapsed, setThinkingCollapsed] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
   const [showSkillsPanel, setShowSkillsPanel] = useState(false);
   const [showProvidersPanel, setShowProvidersPanel] = useState(false);
   const [showPreflightPanel, setShowPreflightPanel] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
   const [bashRuns, setBashRuns] = useState<BashRun[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeSuggestion, setActiveSuggestion] = useState(0);
@@ -106,6 +104,8 @@ export function App({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const notificationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [lastTokensPerSec, setLastTokensPerSec] = useState<number | undefined>();
 
   // Session state
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
@@ -120,9 +120,18 @@ export function App({
     resolve: (confirmed: boolean) => void;
   } | null>(null);
 
-  // Track tool execution state
+  // Track tool execution state. Keyed by tool-call id so historical cards
+  // keep their status + duration after later turns submit. Only cleared by
+  // /clear or by loading a different session — never by simply sending the
+  // next message (that wiped duration on every prior card).
   const [toolStates, setToolStates] = useState<
-    Record<string, { status: 'running' | 'success' | 'error'; result?: string; error?: string; startTime?: number }>
+    Record<string, {
+      status: 'running' | 'success' | 'error';
+      result?: string;
+      error?: string;
+      startTime?: number;
+      endTime?: number;
+    }>
   >({});
 
   const startTimeRef = useRef<number>(0);
@@ -131,10 +140,15 @@ export function App({
   // Queued submissions: messages typed while a turn is in flight.
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
-  // Show notification
+  // Show notification — clears any pending dismiss so back-to-back notifications
+  // don't get cut short by an earlier timer firing.
   const showNotification = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
     setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
+    notificationTimerRef.current = setTimeout(() => {
+      setNotification(null);
+      notificationTimerRef.current = null;
+    }, 3000);
   }, []);
 
   // Initialize session
@@ -191,6 +205,7 @@ export function App({
             result: result.output,
             error: result.error,
             startTime,
+            endTime: Date.now(),
           },
         };
       });
@@ -201,11 +216,8 @@ export function App({
   const {
     messages,
     isLoading,
-    currentReasoning,
-    currentResponse,
     error,
     executingTool,
-    pendingToolCalls,
     sendMessage,
     abort,
     clearHistory,
@@ -238,10 +250,12 @@ export function App({
     setActiveSuggestion(0);
   }, [messages, isLoading]);
 
-  // Sound on completion/error
+  // Sound on completion/error + capture peak token rate from this turn
   useEffect(() => {
     if (!isLoading && startTimeRef.current > 0) {
       setResponseTime(Date.now() - startTimeRef.current);
+      const peak = getPeakRate();
+      if (peak > 0) setLastTokensPerSec(peak);
       if (soundEnabled) {
         if (error) {
           notifyError();
@@ -425,12 +439,30 @@ export function App({
         break;
 
       case 'help':
-        showNotification('^P cmd · ^O sessions · ^S skills · ^R providers · ^L clear', 'info');
+        setShowHelp(true);
         break;
 
-      case 'tokens':
-        showNotification(`See status line for token usage`, 'info');
+      case 'retry': {
+        // Re-fire the last user message verbatim. Useful when the model went
+        // silent and you want a fresh roll without retyping.
+        const lastUser = [...messages].reverse().find(m => m.role === 'user');
+        if (!lastUser) {
+          showNotification('No user message to retry', 'error');
+        } else {
+          sendMessage(lastUser.content);
+        }
         break;
+      }
+
+      case 'continue':
+      case 'go': {
+        // Nudge the model to keep going after it went silent. The text is a
+        // synthetic user turn that asks for the next concrete step.
+        sendMessage(
+          '(continue: produce your text answer or call the next tool. if your task is complete, summarize what you did.)'
+        );
+        break;
+      }
 
       default:
         showNotification(`Unknown command: ${cmd}`, 'error');
@@ -438,6 +470,15 @@ export function App({
   }, [clearHistory, exit, messages, currentSession, modelName, showNotification, reloadMemory, injectSkill, sendMessage, provider]);
 
   useInput((input, key) => {
+    // Help: Esc / Enter / q / Space close it; ignore other keys so a stray
+    // arrow-key doesn't dismiss it before the user has read it.
+    if (showHelp) {
+      if (key.escape || key.return || input === 'q' || input === ' ' || input === '?') {
+        setShowHelp(false);
+      }
+      return;
+    }
+
     // Skip if modal is open
     if (showCommandPalette || showSessionPicker || showSkillsPanel || showProvidersPanel || showPreflightPanel) return;
 
@@ -474,12 +515,6 @@ export function App({
     // Ctrl+R: Providers panel (R for "providers"/swap)
     if (key.ctrl && input === 'r') {
       setShowProvidersPanel(true);
-      return;
-    }
-
-    // Tab: Toggle thinking panel
-    if (key.tab && !isLoading) {
-      setThinkingCollapsed((c) => !c);
       return;
     }
 
@@ -528,6 +563,12 @@ export function App({
         sendMessage(s.fixPrompt);
         setSuggestions([]);
       }
+      return;
+    }
+
+    // Ctrl+T: toggle reasoning visibility for all assistant messages
+    if (key.ctrl && input === 't') {
+      setShowReasoning(r => !r);
       return;
     }
 
@@ -626,7 +667,6 @@ export function App({
 
       startTimeRef.current = Date.now();
       setResponseTime(undefined);
-      setToolStates({});
 
       expandMentions(value, getWorkspace().cwd).then(expanded => {
         if (expanded.attachments.length > 0) {
@@ -648,7 +688,6 @@ export function App({
     setQueuedMessages(rest);
     startTimeRef.current = Date.now();
     setResponseTime(undefined);
-    setToolStates({});
     expandMentions(next, getWorkspace().cwd).then(expanded => {
       if (expanded.attachments.length > 0) {
         showNotification(formatAttachmentSummary(expanded.attachments), 'success');
@@ -703,38 +742,111 @@ export function App({
         )}
 
         {(() => {
-          // Drop tool/system rows, plus assistant messages whose only payload
-          // is tool calls (their bodies render via <ToolCallCard /> already).
-          const visible = messages.filter(m => {
-            if (m.role === 'tool' || m.role === 'system') return false;
-            if (m.role === 'assistant' && !m.content?.trim()) return false;
-            return true;
-          });
-          return visible.map((message, i) => (
-            <MessageBubble
-              key={i}
-              message={message}
-              hideHeader={i > 0 && visible[i - 1].role === message.role}
-            />
-          ));
-        })()}
+          // Single source of truth: every visible turn comes from `messages`.
+          // The streaming assistant message is the most-recent assistant entry
+          // with `streaming: true` — it lives at its final position from the
+          // first byte and never reflows.
+          const lastAssistantIdx = (() => {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if (messages[i].role === 'assistant') return i;
+            }
+            return -1;
+          })();
 
-        {/* Thinking panel */}
-        {isLoading && currentReasoning && (
-          <ThinkingPanel
-            content={currentReasoning}
-            isStreaming={isLoading}
-            isCollapsed={thinkingCollapsed}
-            onToggleCollapse={() => setThinkingCollapsed((c) => !c)}
-          />
-        )}
+          // Aggregate tool calls across every assistant message in the most
+          // recent user turn so the closing summary covers multi-iteration
+          // turns (model goes tools → reasoning → done).
+          const lastUserIdx = (() => {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if (messages[i].role === 'user') return i;
+            }
+            return -1;
+          })();
+          const turnToolCalls = (() => {
+            if (lastUserIdx < 0) return undefined;
+            const acc: typeof messages[number]['toolCalls'] = [];
+            for (let i = lastUserIdx + 1; i < messages.length; i++) {
+              const m = messages[i];
+              if (m.role === 'assistant' && m.toolCalls?.length) {
+                for (const tc of m.toolCalls) acc!.push(tc);
+              }
+            }
+            return acc!.length > 0 ? acc : undefined;
+          })();
+
+          const visible: React.ReactNode[] = [];
+          let lastVisibleRole: string | null = null;
+          let key = 0;
+
+          messages.forEach((message, i) => {
+            if (message.role === 'tool' || message.role === 'system') return;
+            // Synthetic continue prompts render as a tiny one-line breadcrumb
+            // instead of a full "you" bubble — they're argo's own scaffolding,
+            // not something the user typed.
+            if (message.auto) {
+              visible.push(
+                <Box key={`auto${key++}`} marginTop={1} paddingLeft={2}>
+                  <Text color="gray" dimColor>↻ argo auto-continued the turn</Text>
+                </Box>
+              );
+              return;
+            }
+            visible.push(
+              <MessageBubble
+                key={`m${key++}`}
+                message={message}
+                hideHeader={lastVisibleRole === message.role}
+                showReasoning={showReasoning}
+                toolStates={toolStates}
+                isLatestAssistant={i === lastAssistantIdx}
+                turnToolCalls={i === lastAssistantIdx ? turnToolCalls : undefined}
+              />
+            );
+            lastVisibleRole = message.role;
+          });
+
+          // Silent-turn hint: only fires if we already auto-continued once
+          // this user-turn AND the model went silent again AND the turn
+          // produced no successful tool work. If anything succeeded, the
+          // TurnSummary above is the confirmation — a "no follow-up" hint
+          // would just contradict it.
+          const lastMsg = messages[messages.length - 1];
+          const sliceFromUser = (() => {
+            const idx = lastUserIdx;
+            return idx < 0 ? messages : messages.slice(idx);
+          })();
+          const alreadyAutoContinued = sliceFromUser.some(m => m.auto);
+          const turnHadSuccess = (turnToolCalls ?? []).some(
+            tc => toolStates[tc.id]?.status === 'success',
+          );
+          const silentTurn =
+            !isLoading &&
+            alreadyAutoContinued &&
+            !turnHadSuccess &&
+            lastMsg?.role === 'assistant' &&
+            !lastMsg.streaming &&
+            !lastMsg.content?.trim() &&
+            !(lastMsg.toolCalls && lastMsg.toolCalls.length > 0) &&
+            messages.slice(0, -1).some(m => m.role === 'tool');
+
+          if (silentTurn) {
+            visible.push(
+              <Box key="silent-turn" paddingLeft={2} marginTop={1}>
+                <Text color="gray" dimColor>
+                  ◌ no follow-up text — the model returned an empty turn. Try /continue or /retry.
+                </Text>
+              </Box>,
+            );
+          }
+          return visible;
+        })()}
 
         {/* Bash command outputs (from ! prefix) */}
         {bashRuns.map(run => (
           <BashOutput key={run.id} run={run} />
         ))}
 
-        {/* Live agent runs (renders nothing when no agents are running) */}
+        {/* Live sub-agent runs */}
         <AgentRunPanel />
 
         {/* Inline code suggestions */}
@@ -742,40 +854,10 @@ export function App({
           <SuggestionsPanel suggestions={suggestions} activeIndex={activeSuggestion} />
         )}
 
-        {/* Tool calls */}
-        {pendingToolCalls.map((tc) => {
-          const state = toolStates[tc.id];
-          const duration = state?.startTime ? Date.now() - state.startTime : undefined;
-          return (
-            <ToolCallCard
-              key={tc.id}
-              name={tc.name}
-              arguments={tc.arguments}
-              status={state?.status || 'running'}
-              result={state?.result}
-              error={state?.error}
-              duration={state?.status !== 'running' ? duration : undefined}
-            />
-          );
-        })}
-
-        {/* Streaming response */}
-        {isLoading && currentResponse.trim() && (
-          <StreamingMessage content={currentResponse} showCursor={true} />
-        )}
-
-        {/* Loading indicator */}
-        {isLoading && !currentReasoning && !currentResponse && !executingTool && pendingToolCalls.length === 0 && (
-          <Box marginY={1}>
-            <ThinkingIndicator />
-          </Box>
-        )}
-
         {/* Error display */}
         {error && (
-          <Box paddingLeft={2}>
-            <Text color="red">● </Text>
-            <Text color="red">{error}</Text>
+          <Box paddingLeft={2} marginTop={1}>
+            <Text color="red">● {error}</Text>
           </Box>
         )}
       </Box>
@@ -823,6 +905,34 @@ export function App({
         }}
       />
 
+      {/* Help panel */}
+      {showHelp && (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1} marginY={1}>
+          <Box marginBottom={1}>
+            <Text color="cyan" bold>? help</Text>
+            <Text color="gray" dimColor> · Esc / Enter / q to close</Text>
+          </Box>
+          <Text color="white" bold>Keys</Text>
+          <Text color="gray">  ^P  command palette</Text>
+          <Text color="gray">  ^O  sessions</Text>
+          <Text color="gray">  ^S  skills + agents</Text>
+          <Text color="gray">  ^R  providers</Text>
+          <Text color="gray">  ^L  clear conversation</Text>
+          <Text color="gray">  ^K  copy last code block</Text>
+          <Text color="gray">  ^J / ^F   cycle / apply suggestion</Text>
+          <Text color="gray">  ^T  show / hide reasoning for past turns</Text>
+          <Text color="gray">  Tab collapse thinking panel</Text>
+          <Text color="gray">  Esc interrupt the running turn</Text>
+          <Text color="gray">  ^C  abort / exit</Text>
+          <Box marginTop={1}>
+            <Text color="white" bold>Prefixes</Text>
+          </Box>
+          <Text color="gray">  /...  slash commands (^P to browse)</Text>
+          <Text color="gray">  !...  run in active shell session  (!ssh user@host opens remote)</Text>
+          <Text color="gray">  @path attach a file to the next message</Text>
+        </Box>
+      )}
+
       {/* Confirmation prompt */}
       {confirmPrompt && (
         <Box
@@ -862,7 +972,7 @@ export function App({
         <Input
           onSubmit={handleSubmit}
           placeholder={isLoading ? 'Type to queue · Esc to interrupt' : 'Ask me anything... (Ctrl+P for commands)'}
-          disabled={!!confirmPrompt || showCommandPalette || showSessionPicker || showSkillsPanel || showProvidersPanel || showPreflightPanel}
+          disabled={!!confirmPrompt || showCommandPalette || showSessionPicker || showSkillsPanel || showProvidersPanel || showPreflightPanel || showHelp}
         />
       </Box>
 
@@ -875,6 +985,7 @@ export function App({
         messages={messages}
         gitStatus={gitStatus}
         sessionLabel={activeSessionLabel}
+        lastTokensPerSec={lastTokensPerSec}
       />
     </Box>
   );

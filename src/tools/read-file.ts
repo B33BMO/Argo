@@ -1,6 +1,7 @@
 import { readFile } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
-import type { Tool, ToolContext, ToolResult } from './types.js';
+import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
+import { validInput, invalidInput } from './types.js';
 import {
   isSensitivePath,
   requestSensitiveAccess,
@@ -10,6 +11,25 @@ import {
 
 const MAX_OUTPUT_LENGTH = 100000;
 const MAX_LINES = 2000;
+
+interface ReadFileParams {
+  path: string;
+  offset?: number;
+  limit?: number;
+}
+
+function validateParams(params: Record<string, unknown>): ValidationResult {
+  if (typeof params.path !== 'string' || params.path.trim() === '') {
+    return invalidInput('path must be a non-empty string');
+  }
+  if (params.offset !== undefined && typeof params.offset !== 'number') {
+    return invalidInput('offset must be a number');
+  }
+  if (params.limit !== undefined && typeof params.limit !== 'number') {
+    return invalidInput('limit must be a number');
+  }
+  return validInput(params as Record<string, unknown>);
+}
 
 export const readFileTool: Tool = {
   name: 'read_file',
@@ -24,7 +44,7 @@ export const readFileTool: Tool = {
       },
       offset: {
         type: 'number',
-        description: 'Line number to start reading from (1-based, default: 1)',
+        description: `Line number to start reading from (1-based, default: 1)`,
       },
       limit: {
         type: 'number',
@@ -34,13 +54,16 @@ export const readFileTool: Tool = {
     required: ['path'],
   },
 
+  isReadOnly: () => true,
+
+  validateInput: validateParams,
+
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolResult> {
-    const filePath = params.path as string;
-    const offset = ((params.offset as number) || 1) - 1; // Convert to 0-based
-    const limit = (params.limit as number) || MAX_LINES;
+    const { path: filePath, offset = 1, limit = MAX_LINES } = params as unknown as ReadFileParams;
+    const lineOffset = offset - 1; // Convert to 0-based
 
     const absolutePath = isAbsolute(filePath)
       ? filePath
@@ -62,17 +85,17 @@ export const readFileTool: Tool = {
       const totalLines = lines.length;
 
       // Apply offset and limit
-      const selectedLines = lines.slice(offset, offset + limit);
+      const selectedLines = lines.slice(lineOffset, lineOffset + limit);
       let output = selectedLines
-        .map((line, i) => `${(offset + i + 1).toString().padStart(6)}\t${line}`)
+        .map((line, i) => `${(lineOffset + i + 1).toString().padStart(6)}\t${line}`)
         .join('\n');
 
       let truncated = false;
       const info: string[] = [];
 
-      if (offset > 0 || offset + limit < totalLines) {
+      if (lineOffset > 0 || lineOffset + limit < totalLines) {
         info.push(
-          `Showing lines ${offset + 1}-${Math.min(offset + limit, totalLines)} of ${totalLines}`
+          `Showing lines ${lineOffset + 1}-${Math.min(lineOffset + limit, totalLines)} of ${totalLines}`
         );
         truncated = true;
       }

@@ -1,9 +1,25 @@
 import { glob } from 'glob';
 import { resolve, isAbsolute } from 'path';
-import type { Tool, ToolContext, ToolResult } from './types.js';
+import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
+import { validInput, invalidInput } from './types.js';
 import { SENSITIVE_GLOB_IGNORES, isSensitivePath } from '../utils/secrets.js';
 
 const MAX_RESULTS = 500;
+
+interface GlobParams {
+  pattern: string;
+  path?: string;
+}
+
+function validateParams(params: Record<string, unknown>): ValidationResult {
+  if (typeof params.pattern !== 'string' || params.pattern.trim() === '') {
+    return invalidInput('pattern must be a non-empty string');
+  }
+  if (params.path !== undefined && typeof params.path !== 'string') {
+    return invalidInput('path must be a string');
+  }
+  return validInput(params as Record<string, unknown>);
+}
 
 export const globTool: Tool = {
   name: 'glob',
@@ -25,12 +41,15 @@ export const globTool: Tool = {
     required: ['pattern'],
   },
 
+  isReadOnly: () => true,
+
+  validateInput: validateParams,
+
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolResult> {
-    const pattern = params.pattern as string;
-    const basePath = params.path as string | undefined;
+    const { pattern, path: basePath } = params as unknown as GlobParams;
 
     const cwd = basePath
       ? isAbsolute(basePath)

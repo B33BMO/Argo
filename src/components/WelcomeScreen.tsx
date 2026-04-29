@@ -11,20 +11,20 @@ const TIPS: string[] = [
   'Ask me to read, write, or run anything in your project',
   '! prefix runs bash directly: !ls, !ssh user@host (opens remote session)',
   'I have bash, file ops, grep, curl, and sub-agents',
-  'Spawn @explorer, @coder, @reviewer, @debugger in parallel',
+  'Fan out work to explorer / coder / reviewer / debugger sub-agents',
 ];
 
 export const WelcomeScreen = memo(function WelcomeScreen({ modelName, providerName }: WelcomeScreenProps) {
   return (
     <Box flexDirection="column" paddingY={1} alignItems="center">
-      {/* Big avatar mark */}
+      {/* Argo — a tiny argonaut. The argonaut is a paper-nautilus that
+          floats with its shell up; we caricature it with two eyes and a
+          couple of tentacle dots. */}
       <Box flexDirection="column" alignItems="center">
-        <Text color="green" bold>      ▲      </Text>
-        <Text color="green" bold>     ╱│╲     </Text>
-        <Text color="green" bold>    ╱ │ ╲    </Text>
-        <Text color="cyan"  bold>   ╱──┼──╲   </Text>
-        <Text color="cyan"  bold>  ╱   │   ╲  </Text>
-        <Text color="cyan"  bold> ╱────┴────╲ </Text>
+        <Text color="green" bold> ▟▀▀▀▙ </Text>
+        <Text color="green" bold>█▌◉ ◉▐█</Text>
+        <Text color="cyan"  bold>▝▙▄▄▄▟▘</Text>
+        <Text color="cyan"  bold>  ▘ ▘  </Text>
       </Box>
 
       {/* Wordmark — plain bold text, no block art */}

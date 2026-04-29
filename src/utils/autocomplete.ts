@@ -79,32 +79,29 @@ export interface Command {
   args?: string;
 }
 
+// Only commands that have a real handler in app.tsx live here.
+// Adding a command here without an executeCommand case shows it in the palette
+// then errors with "Unknown command" — bad UX.
 const BUILTIN_COMMANDS: Command[] = [
-  { name: 'help', description: 'Show available commands', aliases: ['h', '?'] },
-  { name: 'clear', description: 'Clear conversation history', aliases: ['cls'] },
-  { name: 'exit', description: 'Exit Argo', aliases: ['quit', 'q'] },
-  { name: 'model', description: 'Switch model', args: '<model-name>' },
-  { name: 'session', description: 'Session management', args: '[list|new|load|save|delete]' },
-  { name: 'providers', description: 'Manage LLM providers (add, switch, edit)', aliases: ['provider'] },
-  { name: 'soul', description: "View Argo's evolving personality (use 'reset' to wipe)", args: '[reset|path]' },
-  { name: 'cwd', description: 'Show the working directory Argo is rooted in', aliases: ['pwd'] },
-  { name: 'mcp', description: 'List active MCP servers and their tools' },
-  { name: 'memory', description: 'View or edit project memory (.argo/memory.md)', args: '[path|edit]' },
+  { name: 'help', description: 'Show keyboard shortcuts' },
+  { name: 'clear', description: 'Clear conversation history' },
+  { name: 'exit', description: 'Exit Argo', aliases: ['quit'] },
+  { name: 'model', description: 'Show or switch model', args: '[model-name]' },
+  { name: 'providers', description: 'Manage LLM providers', aliases: ['provider'] },
+  { name: 'soul', description: "Argo's evolving personality", args: '[reset|path]' },
+  { name: 'cwd', description: 'Show working directory', aliases: ['pwd'] },
+  { name: 'mcp', description: 'List active MCP servers' },
+  { name: 'memory', description: 'View or edit project memory', args: '[path|edit]' },
   { name: 'skill', description: 'Inject a skill into the next message', args: '<name>' },
-  { name: 'fork', description: 'Fork the current conversation into a new session' },
+  { name: 'fork', description: 'Fork the current conversation' },
   { name: 'preflight', description: 'Run system preflight checks', aliases: ['check', 'doctor'] },
   { name: 'party', description: 'Multi-agent debate on a topic', args: '<topic>' },
   { name: 'init', description: 'Explore the project and write argo.md' },
-  { name: 'conversations', description: 'Browse past conversations', aliases: ['sessions'] },
-  { name: 'export', description: 'Export conversation', args: '[markdown|html|json]' },
-  { name: 'theme', description: 'Change color theme', args: '<theme-name>' },
-  { name: 'icons', description: 'Change icon style', args: '[nerd|unicode|ascii]' },
-  { name: 'history', description: 'Search conversation history', args: '[query]' },
-  { name: 'undo', description: 'Undo last message' },
-  { name: 'retry', description: 'Retry last request' },
-  { name: 'copy', description: 'Copy last response to clipboard' },
-  { name: 'compact', description: 'Toggle compact mode' },
-  { name: 'tokens', description: 'Show token usage' },
+  { name: 'sessions', description: 'Browse past conversations', aliases: ['session', 'conversations'] },
+  { name: 'export', description: 'Export conversation as markdown' },
+  { name: 'copy', description: 'Copy last code block to clipboard' },
+  { name: 'retry', description: 'Re-send the last user message' },
+  { name: 'continue', description: 'Nudge the model to keep going after a silent turn', aliases: ['go'] },
 ];
 
 export function completeCommand(partial: string): CompletionItem[] {

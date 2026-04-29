@@ -51,6 +51,11 @@ export function getCurrentRate(): number {
   return recent.reduce((a, b) => a + b, 0) / recent.length;
 }
 
+/** Peak rate across the entire ring buffer — used for "last burst" display. */
+export function getPeakRate(): number {
+  return Math.max(...buffer, 0);
+}
+
 export function subscribe(fn: () => void): () => void {
   listeners.add(fn);
   ensureInterval();

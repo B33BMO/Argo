@@ -1,4 +1,7 @@
 import OpenAI from 'openai';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import type {
   LLMProvider,
   Message,
@@ -8,18 +11,34 @@ import type {
 } from './types.js';
 import type { Tool } from '../tools/types.js';
 import { toToolDefinition } from '../tools/types.js';
+import { withRetry, type RetryOptions } from '../utils/retry.js';
+
+// Set ARGO_DEBUG_STREAM=1 to dump every raw stream delta from the model to
+// ~/.argo/stream-debug.log. Lets us audit "did the model actually emit X?"
+// without trusting the model's own retrospective claims.
+const DEBUG_STREAM = process.env.ARGO_DEBUG_STREAM === '1';
+const DEBUG_LOG = path.join(os.homedir(), '.argo', 'stream-debug.log');
+function debugWrite(line: string): void {
+  if (!DEBUG_STREAM) return;
+  try {
+    fs.mkdirSync(path.dirname(DEBUG_LOG), { recursive: true });
+    fs.appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${line}\n`);
+  } catch { /* swallow */ }
+}
 
 export class OpenAICompatProvider implements LLMProvider {
   name = 'openai-compatible';
   private client: OpenAI;
   private model: string;
   private supportsTools: boolean;
+  private retryOptions: RetryOptions;
 
   constructor(options: {
     baseUrl?: string;
     apiKey?: string;
     model?: string;
     supportsTools?: boolean;
+    retryOptions?: RetryOptions;
   } = {}) {
     this.client = new OpenAI({
       baseURL: options.baseUrl || 'http://localhost:8000/v1',
@@ -27,6 +46,15 @@ export class OpenAICompatProvider implements LLMProvider {
     });
     this.model = options.model || 'default';
     this.supportsTools = options.supportsTools ?? true;
+    
+    this.retryOptions = options.retryOptions ?? {
+      maxRetries: 3,
+      initialDelayMs: 1000,
+      maxDelayMs: 30000,
+      onRetry: (err, attempt, delayMs) => {
+        console.warn(`[OpenAI] Retry ${attempt} after ${delayMs}ms: ${err.message}`);
+      },
+    };
   }
 
   setModel(model: string): void {
@@ -39,7 +67,10 @@ export class OpenAICompatProvider implements LLMProvider {
 
   async listModels(): Promise<string[]> {
     try {
-      const response = await this.client.models.list();
+      const response = await withRetry(
+        () => this.client.models.list(),
+        this.retryOptions
+      );
       return response.data.map((m) => m.id);
     } catch (err) {
       console.error('Failed to list models:', err);
@@ -119,13 +150,18 @@ export class OpenAICompatProvider implements LLMProvider {
           })
         : undefined;
 
+      // Reasoning models (Qwen3, DeepSeek-R1, etc.) burn tokens in
+      // `reasoning_content` from the SAME budget as `content` + `tool_calls`.
+      // 4096 was leaving the model out of headroom mid-task. 32768 is high
+      // enough that even chunky multi-step turns don't get cut off, while
+      // still capped — runaway loops still terminate.
       const stream = await this.client.chat.completions.create({
         model,
         messages: openaiMessages,
         stream: true,
         tools,
         temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.maxTokens ?? 4096,
+        max_tokens: options?.maxTokens ?? 32768,
       });
 
       let fullContent = '';
@@ -135,6 +171,11 @@ export class OpenAICompatProvider implements LLMProvider {
         { id: string; name: string; arguments: string }
       > = new Map();
 
+      debugWrite(`--- request: model=${model} messages=${messages.length} tools=${tools?.length ?? 0}`);
+      let streamTextChars = 0;
+      let streamReasoningChars = 0;
+      let streamToolCallCount = 0;
+
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta as Record<string, unknown>;
 
@@ -142,12 +183,14 @@ export class OpenAICompatProvider implements LLMProvider {
         if (delta?.content) {
           fullContent += delta.content as string;
           hasYieldedContent = true;
+          streamTextChars += (delta.content as string).length;
           yield { type: 'text', content: delta.content as string };
         }
 
         // Handle Qwen3-style reasoning_content (thinking)
         if (delta?.reasoning_content) {
           const thinking = delta.reasoning_content as string;
+          streamReasoningChars += thinking.length;
           yield { type: 'reasoning', content: thinking };
         }
 
@@ -184,11 +227,15 @@ export class OpenAICompatProvider implements LLMProvider {
                 name: tc.name,
                 arguments: JSON.parse(tc.arguments || '{}'),
               };
+              streamToolCallCount++;
               yield { type: 'tool_call', toolCall };
             } catch {
               // Skip malformed tool calls
             }
           }
+        }
+        if (chunk.choices[0]?.finish_reason) {
+          debugWrite(`finish_reason=${chunk.choices[0].finish_reason} text=${streamTextChars}c reasoning=${streamReasoningChars}c tool_calls=${streamToolCallCount}`);
         }
       }
 

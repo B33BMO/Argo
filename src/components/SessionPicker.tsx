@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { icon } from '../utils/icons.js';
 import {
   listSessions,
   searchSessions,
   deleteSession,
-  renameSession,
   type SessionSummary,
 } from '../utils/history.js';
 
@@ -114,10 +113,14 @@ export function SessionPicker({
     }
 
     if (input === 'd' && sessions[selectedIndex]) {
-      // Delete session
-      deleteSession(sessions[selectedIndex].id).then(() => {
-        setSessions(s => s.filter((_, i) => i !== selectedIndex));
-        setSelectedIndex(i => Math.min(i, sessions.length - 2));
+      const id = sessions[selectedIndex].id;
+      deleteSession(id).then(() => {
+        setSessions(s => {
+          const next = s.filter(x => x.id !== id);
+          // Clamp the selected index to the new bounds.
+          setSelectedIndex(i => Math.max(0, Math.min(i, next.length - 1)));
+          return next;
+        });
       });
       return;
     }
@@ -222,23 +225,3 @@ function SessionItem({ session, isSelected }: SessionItemProps) {
   );
 }
 
-// Mini session indicator for status bar
-interface SessionIndicatorProps {
-  sessionName?: string;
-  hasUnsavedChanges?: boolean;
-}
-
-export function SessionIndicator({
-  sessionName,
-  hasUnsavedChanges = false,
-}: SessionIndicatorProps) {
-  if (!sessionName) return null;
-
-  return (
-    <Box>
-      <Text color="cyan">{icon('file')} </Text>
-      <Text color="white">{sessionName}</Text>
-      {hasUnsavedChanges && <Text color="yellow"> ●</Text>}
-    </Box>
-  );
-}

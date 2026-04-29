@@ -1,6 +1,34 @@
 import { readFile, writeFile } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
-import type { Tool, ToolContext, ToolResult } from './types.js';
+import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
+import { validInput, invalidInput } from './types.js';
+import { loadPermissions, isWritePathAllowed, allowWritePath } from '../utils/permissions.js';
+
+interface EditFileParams {
+  path: string;
+  old_string: string;
+  new_string: string;
+  replace_all?: boolean;
+}
+
+function validateParams(params: Record<string, unknown>): ValidationResult {
+  if (typeof params.path !== 'string' || params.path.trim() === '') {
+    return invalidInput('path must be a non-empty string');
+  }
+  if (typeof params.old_string !== 'string') {
+    return invalidInput('old_string must be a string');
+  }
+  if (params.old_string.trim() === '') {
+    return invalidInput('old_string cannot be empty');
+  }
+  if (typeof params.new_string !== 'string') {
+    return invalidInput('new_string must be a string');
+  }
+  if (params.replace_all !== undefined && typeof params.replace_all !== 'boolean') {
+    return invalidInput('replace_all must be a boolean');
+  }
+  return validInput(params as Record<string, unknown>);
+}
 
 export const editFileTool: Tool = {
   name: 'edit_file',
@@ -30,18 +58,37 @@ export const editFileTool: Tool = {
     required: ['path', 'old_string', 'new_string'],
   },
 
+  isReadOnly: () => false,
+
+  validateInput: validateParams,
+
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolResult> {
-    const filePath = params.path as string;
-    const oldString = params.old_string as string;
-    const newString = params.new_string as string;
-    const replaceAll = (params.replace_all as boolean) || false;
+    const { path: filePath, old_string: oldString, new_string: newString, replace_all: replaceAll } = params as unknown as EditFileParams;
 
     const absolutePath = isAbsolute(filePath)
       ? filePath
       : resolve(context.cwd, filePath);
+
+    // Check permissions
+    const permissions = await loadPermissions();
+    const isAllowed = isWritePathAllowed(permissions, absolutePath);
+
+    if (!isAllowed && context.requestConfirmation) {
+      const confirmed = await context.requestConfirmation(
+        `Edit file: ${absolutePath}?\n\nReplace "${oldString.slice(0, 50)}${oldString.length > 50 ? '...' : ''}"?`
+      );
+      if (!confirmed) {
+        return {
+          success: false,
+          output: '',
+          error: 'File edit cancelled by user',
+        };
+      }
+      await allowWritePath(absolutePath);
+    }
 
     try {
       const content = await readFile(absolutePath, 'utf-8');

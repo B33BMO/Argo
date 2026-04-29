@@ -8,6 +8,7 @@ import type {
 } from './types.js';
 import type { Tool } from '../tools/types.js';
 import { toToolDefinition } from '../tools/types.js';
+import { withRetry, type RetryOptions } from '../utils/retry.js';
 
 // Models known to support native tool calling
 const TOOL_CAPABLE_MODELS = [
@@ -35,8 +36,9 @@ export class OllamaProvider implements LLMProvider {
   private model: string;
   private baseUrl: string;
   private apiKey?: string;
+  private retryOptions: RetryOptions;
 
-  constructor(options: { baseUrl?: string; model?: string; apiKey?: string } = {}) {
+  constructor(options: { baseUrl?: string; model?: string; apiKey?: string; retryOptions?: RetryOptions } = {}) {
     this.baseUrl = options.baseUrl || 'http://localhost:11434';
     this.model = options.model || 'llama3.2';
     this.apiKey = options.apiKey;
@@ -46,6 +48,15 @@ export class OllamaProvider implements LLMProvider {
     if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
 
     this.client = new Ollama({ host: this.baseUrl, headers });
+    
+    this.retryOptions = options.retryOptions ?? {
+      maxRetries: 3,
+      initialDelayMs: 1000,
+      maxDelayMs: 30000,
+      onRetry: (err, attempt, delayMs) => {
+        console.warn(`[Ollama] Retry ${attempt} after ${delayMs}ms: ${err.message}`);
+      },
+    };
   }
 
   setModel(model: string): void {
@@ -58,7 +69,10 @@ export class OllamaProvider implements LLMProvider {
 
   async listModels(): Promise<string[]> {
     try {
-      const response = await this.client.list();
+      const response = await withRetry(
+        () => this.client.list(),
+        this.retryOptions
+      );
       return response.models.map((m) => m.name);
     } catch (err) {
       console.error('Failed to list Ollama models:', err);

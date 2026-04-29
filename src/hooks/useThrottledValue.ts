@@ -1,36 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-
-/**
- * Throttles a fast-changing value (e.g. streaming text) to a max update rate.
- * Prevents flicker from re-rendering on every token.
- */
-export function useThrottledValue<T>(value: T, intervalMs = 50): T {
-  const [throttled, setThrottled] = useState(value);
-  const lastUpdateRef = useRef(0);
-  const pendingTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    const now = Date.now();
-    const elapsed = now - lastUpdateRef.current;
-
-    if (elapsed >= intervalMs) {
-      lastUpdateRef.current = now;
-      setThrottled(value);
-    } else {
-      if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
-      pendingTimerRef.current = setTimeout(() => {
-        lastUpdateRef.current = Date.now();
-        setThrottled(value);
-      }, intervalMs - elapsed);
-    }
-
-    return () => {
-      if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
-    };
-  }, [value, intervalMs]);
-
-  return throttled;
-}
+import { useEffect, useState } from 'react';
 
 /**
  * Single shared animation tick — components subscribe instead of each

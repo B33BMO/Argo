@@ -34,10 +34,36 @@ export interface ToolResult {
   truncated?: boolean;
 }
 
+export interface ValidationResult {
+  success: boolean;
+  error?: string;
+  data?: Record<string, unknown>;
+}
+
 export interface Tool {
   name: string;
   description: string;
   parameters: JSONSchema;
+  /**
+   * Returns true if this tool only reads data and has no side effects.
+   * Read-only tools can run concurrently with other read-only tools.
+   * Tools that write files, execute commands, or modify state should return false.
+   */
+  isReadOnly?: () => boolean;
+  /**
+   * Returns true if this tool needs user confirmation before execution.
+   * Override to provide fine-grained permission control.
+   * If not defined, the registry will check needsConfirmationForInput().
+   */
+  needsConfirmation?: () => boolean;
+  /**
+   * Validate input parameters before execution.
+   * Returns validation result with parsed data on success.
+   */
+  validateInput?: (params: Record<string, unknown>) => ValidationResult;
+  /**
+   * Execute the tool with validated parameters.
+   */
   execute(
     params: Record<string, unknown>,
     context: ToolContext
@@ -68,4 +94,18 @@ export function toToolDefinition(tool: Tool): ToolDefinition {
       parameters: tool.parameters,
     },
   };
+}
+
+/**
+ * Helper to create a validation result for valid input
+ */
+export function validInput(data: Record<string, unknown>): ValidationResult {
+  return { success: true, data };
+}
+
+/**
+ * Helper to create a validation result for invalid input
+ */
+export function invalidInput(error: string): ValidationResult {
+  return { success: false, error };
 }

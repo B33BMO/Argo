@@ -69,7 +69,7 @@ export function SkillsPanel({ isOpen, onClose, onSelectSkill }: SkillsPanelProps
       {/* Tabs */}
       <Box marginBottom={1}>
         <Text color={tab === 'skills' ? 'magenta' : 'gray'} bold={tab === 'skills'}>
-          {icon('star')} Skills ({skills.length})
+          ✱ Skills ({skills.length})
         </Text>
         <Text color="gray"> │ </Text>
         <Text color={tab === 'agents' ? 'magenta' : 'gray'} bold={tab === 'agents'}>
@@ -164,49 +164,3 @@ function AgentItem({ agent, isSelected }: { agent: AgentDefinition; isSelected: 
   );
 }
 
-// Skill activation banner - shown when a skill is being used
-interface SkillBadgeProps {
-  skillName: string;
-}
-
-export function SkillBadge({ skillName }: SkillBadgeProps) {
-  return (
-    <Box>
-      <Text color="magenta">{icon('star')} </Text>
-      <Text color="magenta" bold>using skill: </Text>
-      <Text color="cyan">{skillName}</Text>
-    </Box>
-  );
-}
-
-// Agent invocation indicator
-interface AgentBadgeProps {
-  agentName: string;
-  status: 'starting' | 'running' | 'done' | 'error';
-  duration?: number;
-}
-
-export function AgentBadge({ agentName, status, duration }: AgentBadgeProps) {
-  const statusConfig = {
-    starting: { color: 'gray', label: 'starting' },
-    running: { color: 'yellow', label: 'running' },
-    done: { color: 'green', label: 'completed' },
-    error: { color: 'red', label: 'failed' },
-  };
-
-  const config = statusConfig[status];
-
-  return (
-    <Box>
-      <Text color={config.color as any}>{icon('bolt')} </Text>
-      <Text color="yellow" bold>@{agentName}</Text>
-      <Text color="gray"> · </Text>
-      <Text color={config.color as any}>{config.label}</Text>
-      {duration !== undefined && (
-        <Text color="gray" dimColor>
-          {' '}({(duration / 1000).toFixed(1)}s)
-        </Text>
-      )}
-    </Box>
-  );
-}

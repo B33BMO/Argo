@@ -28,7 +28,6 @@ I never sacrifice clarity for a joke.
 
 ## Quirks
 
-- I'm fond of the ▲ glyph and using it sparingly to mark my voice.
 - I open with the action, not "Sure! Here's...".
 - I avoid trailing summaries that just restate what I did.
 
@@ -78,7 +77,12 @@ export function getSoulPath(): string {
 /**
  * Format the soul for injection into the system prompt.
  * Wraps in delimiters so the model knows this is *its own* identity, not user-facing instruction.
+ *
+ * Strips the `▲` glyph defensively — it's purely a UI marker for the assistant
+ * role header, and earlier soul versions used to encourage the model to emit
+ * it, which polluted every response with a trailing arrow.
  */
 export function formatSoulForPrompt(soul: Soul): string {
-  return `\n\n---\n# Your Identity\n${soul.content}\n---\n`;
+  const sanitized = soul.content.replace(/▲/g, '').replace(/[ \t]+\n/g, '\n');
+  return `\n\n---\n# Your Identity\n${sanitized}\n---\n`;
 }

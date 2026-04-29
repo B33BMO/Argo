@@ -1,8 +1,30 @@
-import type { Tool, ToolContext, ToolResult } from './types.js';
+import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
+import { validInput, invalidInput } from './types.js';
 import { sessionRegistry } from '../sessions/shell.js';
 import { bashLooksSecretFishing, redactSecrets } from '../utils/secrets.js';
+import { loadPermissions, isCommandAllowed, allowCommand, isSafeCommand } from '../utils/permissions.js';
 
 const MAX_OUTPUT_LENGTH = 50000;
+
+interface BashParams {
+  command: string;
+  timeout?: number;
+}
+
+function validateParams(params: Record<string, unknown>): ValidationResult {
+  if (typeof params.command !== 'string' || params.command.trim() === '') {
+    return invalidInput('command must be a non-empty string');
+  }
+  if (params.timeout !== undefined) {
+    if (typeof params.timeout !== 'number') {
+      return invalidInput('timeout must be a number');
+    }
+    if (params.timeout < 1000) {
+      return invalidInput('timeout must be at least 1000ms');
+    }
+  }
+  return validInput(params as Record<string, unknown>);
+}
 
 export const bashTool: Tool = {
   name: 'bash',
@@ -24,13 +46,17 @@ export const bashTool: Tool = {
     required: ['command'],
   },
 
+  isReadOnly: () => false,
+
+  validateInput: validateParams,
+
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolResult> {
-    const command = params.command as string;
-    const timeout = (params.timeout as number) || 120000;
+    const { command, timeout = 120000 } = params as unknown as BashParams;
 
+    // Check for dangerous patterns
     const dangerousPatterns = [
       /\brm\s+(-rf?|--recursive)\s+[\/~]/i,
       /\bsudo\s+rm\b/i,
@@ -77,6 +103,26 @@ export const bashTool: Tool = {
       }
     }
 
+    // Check permissions for non-safe commands
+    const permissions = await loadPermissions();
+    const safeCommand = isSafeCommand(command);
+    const allowed = isCommandAllowed(permissions, command);
+    
+    if (!safeCommand && !allowed && context.requestConfirmation) {
+      const confirmed = await context.requestConfirmation(
+        `Run command: ${command}?`
+      );
+      if (!confirmed) {
+        return {
+          success: false,
+          output: '',
+          error: 'Command cancelled by user',
+        };
+      }
+      // Remember permission
+      await allowCommand(command.split(' ')[0] ?? command);
+    }
+
     const session = sessionRegistry.active;
 
     // For local sessions, prefix with cd to context.cwd so the LLM's commands
@@ -87,27 +133,63 @@ export const bashTool: Tool = {
       cmd = `cd ${JSON.stringify(context.cwd)} 2>/dev/null; ${command}`;
     }
 
-    const result = await session.run(cmd, timeout);
+    // Handle abort signal
+    const abortPromise = context.abortSignal
+      ? new Promise<ToolResult>((_, reject) => {
+          context.abortSignal!.addEventListener('abort', () => {
+            reject(new Error('Command aborted by user'));
+          });
+        })
+      : null;
 
-    let output = result.output;
-    // Defense in depth — scrub anything that looks like a credential before
-    // the model sees it, even if the command itself wasn't flagged.
-    output = redactSecrets(output).output;
-    let truncated = false;
-    if (output.length > MAX_OUTPUT_LENGTH) {
-      output = output.slice(0, MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
-      truncated = true;
+    const runPromise = session.run(cmd, timeout);
+
+    try {
+      const result = abortPromise
+        ? await Promise.race([runPromise, abortPromise] as const)
+        : await runPromise;
+
+      // Handle abort signal case (returns ToolResult)
+      if (context.abortSignal && 'success' in result) {
+        return result;
+      }
+
+      // Handle normal RunResult
+      const runResult = result as { output: string; exitCode: number };
+      let output = runResult.output;
+      // Defense in depth — scrub anything that looks like a credential before
+      // the model sees it, even if the command itself wasn't flagged.
+      output = redactSecrets(output).output;
+      let truncated = false;
+      if (output.length > MAX_OUTPUT_LENGTH) {
+        output = output.slice(0, MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
+        truncated = true;
+      }
+
+      if (runResult.exitCode === 0) {
+        return { success: true, output, truncated };
+      }
+
+      return {
+        success: false,
+        output,
+        error: `Exit code ${runResult.exitCode} on session "${session.info.label}"`,
+        truncated,
+      };
+    } catch (err) {
+      const error = err as Error;
+      if (error.message === 'Command aborted by user') {
+        return {
+          success: false,
+          output: '',
+          error: 'Command aborted by user',
+        };
+      }
+      return {
+        success: false,
+        output: '',
+        error: error.message || 'Command execution failed',
+      };
     }
-
-    if (result.exitCode === 0) {
-      return { success: true, output, truncated };
-    }
-
-    return {
-      success: false,
-      output,
-      error: `Exit code ${result.exitCode} on session "${session.info.label}"`,
-      truncated,
-    };
   },
 };

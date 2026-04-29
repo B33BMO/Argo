@@ -20,6 +20,23 @@ export class ToolRegistry {
     return this.getAll().map(toToolDefinition);
   }
 
+  /**
+   * Check if a tool is read-only (no side effects).
+   * Used to determine if multiple tools can run concurrently.
+   */
+  isReadOnly(name: string): boolean {
+    const tool = this.tools.get(name);
+    if (!tool) return false;
+    return tool.isReadOnly?.() ?? false;
+  }
+
+  /**
+   * Check if all tools in a list are read-only.
+   */
+  allReadOnly(toolNames: string[]): boolean {
+    return toolNames.every(name => this.isReadOnly(name));
+  }
+
   async execute(
     name: string,
     params: Record<string, unknown>,
@@ -33,6 +50,18 @@ export class ToolRegistry {
         output: '',
         error: `Unknown tool: ${name}`,
       };
+    }
+
+    // Validate input if tool has a schema
+    if (tool.validateInput) {
+      const validation = tool.validateInput(params);
+      if (!validation.success) {
+        return {
+          success: false,
+          output: '',
+          error: `Validation error: ${validation.error}`,
+        };
+      }
     }
 
     try {

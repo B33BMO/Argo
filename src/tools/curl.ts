@@ -1,7 +1,52 @@
-import type { Tool, ToolContext, ToolResult } from './types.js';
+import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
+import { validInput, invalidInput } from './types.js';
+import { loadPermissions, isCommandAllowed, allowCommand, isSafeCommand } from '../utils/permissions.js';
 
 const MAX_RESPONSE_LENGTH = 50000;
 const DEFAULT_TIMEOUT = 30000;
+
+interface CurlParams {
+  url: string;
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  headers?: Record<string, string>;
+  body?: string;
+  timeout?: number;
+}
+
+function validateParams(params: Record<string, unknown>): ValidationResult {
+  if (typeof params.url !== 'string' || params.url.trim() === '') {
+    return invalidInput('url must be a non-empty string');
+  }
+  
+  // Validate URL
+  try {
+    new URL(params.url as string);
+  } catch {
+    return invalidInput(`Invalid URL: ${params.url}`);
+  }
+  
+  if (params.method !== undefined) {
+    const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
+    const method = typeof params.method === 'string' ? params.method.toUpperCase() : '';
+    if (!validMethods.includes(method)) {
+      return invalidInput(`method must be one of: ${validMethods.join(', ')}`);
+    }
+  }
+  
+  if (params.headers !== undefined && typeof params.headers !== 'object') {
+    return invalidInput('headers must be an object');
+  }
+  
+  if (params.body !== undefined && typeof params.body !== 'string') {
+    return invalidInput('body must be a string');
+  }
+  
+  if (params.timeout !== undefined && typeof params.timeout !== 'number') {
+    return invalidInput('timeout must be a number');
+  }
+  
+  return validInput(params as Record<string, unknown>);
+}
 
 export const curlTool: Tool = {
   name: 'curl',
@@ -35,27 +80,35 @@ export const curlTool: Tool = {
     required: ['url'],
   },
 
+  isReadOnly: () => true, // GET is read-only; non-GET handled by confirmation
+
+  validateInput: validateParams,
+
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolResult> {
-    const url = params.url as string;
-    const method = ((params.method as string) || 'GET').toUpperCase();
-    const headers = (params.headers as Record<string, string>) || {};
-    const body = params.body as string | undefined;
-    const timeout = (params.timeout as number) || DEFAULT_TIMEOUT;
+    const { url, method = 'GET', headers = {}, body, timeout = DEFAULT_TIMEOUT } = params as unknown as CurlParams;
 
-    // Confirm non-GET requests
-    if (method !== 'GET' && context.requestConfirmation) {
-      const confirmed = await context.requestConfirmation(
-        `Make ${method} request to ${url}?`
-      );
-      if (!confirmed) {
-        return {
-          success: false,
-          output: '',
-          error: 'Request cancelled by user',
-        };
+    const upperMethod = method.toUpperCase();
+
+    // Check permissions for non-GET requests
+    if (upperMethod !== 'GET') {
+      const permissions = await loadPermissions();
+      const isAllowed = isCommandAllowed(permissions, `curl ${upperMethod}`);
+      
+      if (!isAllowed && context.requestConfirmation) {
+        const confirmed = await context.requestConfirmation(
+          `Make ${upperMethod} request to ${url}?`
+        );
+        if (!confirmed) {
+          return {
+            success: false,
+            output: '',
+            error: 'Request cancelled by user',
+          };
+        }
+        await allowCommand(`curl ${upperMethod}`);
       }
     }
 
@@ -64,13 +117,15 @@ export const curlTool: Tool = {
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       const response = await fetch(url, {
-        method,
+        method: upperMethod,
         headers: {
-          'User-Agent': 'Argo/1.0',
+          'User-Agent': 'Daedalus/1.0',
           ...headers,
         },
         body: body || undefined,
-        signal: controller.signal,
+        signal: context.abortSignal 
+          ? AbortSignal.any([controller.signal, context.abortSignal])
+          : controller.signal,
       });
 
       clearTimeout(timeoutId);
@@ -96,11 +151,13 @@ export const curlTool: Tool = {
       }
 
       const statusLine = `HTTP ${response.status} ${response.statusText}`;
-      const headerLines = Array.from(response.headers.entries())
-        .map(([k, v]) => `${k}: ${v}`)
-        .join('\n');
+      const headerLines: string[] = [];
+      response.headers.forEach((value, key) => {
+        headerLines.push(`${key}: ${value}`);
+      });
+      const headerBlock = headerLines.join('\n');
 
-      const output = `${statusLine}\n${headerLines}\n\n${responseBody}`;
+      const output = `${statusLine}\n${headerBlock}\n\n${responseBody}`;
 
       return {
         success: response.ok,
@@ -110,6 +167,15 @@ export const curlTool: Tool = {
       };
     } catch (err) {
       const error = err as Error;
+
+      // Check if aborted by user
+      if (context.abortSignal?.aborted) {
+        return {
+          success: false,
+          output: '',
+          error: 'Request cancelled by user',
+        };
+      }
 
       if (error.name === 'AbortError') {
         return {

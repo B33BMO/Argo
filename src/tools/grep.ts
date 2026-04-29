@@ -1,16 +1,46 @@
 import { readFile } from 'fs/promises';
 import { glob } from 'glob';
 import { resolve, isAbsolute } from 'path';
-import type { Tool, ToolContext, ToolResult } from './types.js';
+import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
+import { validInput, invalidInput } from './types.js';
 import { SENSITIVE_GLOB_IGNORES, isSensitivePath, redactSecrets } from '../utils/secrets.js';
 
 const MAX_MATCHES = 100;
 const MAX_LINE_LENGTH = 200;
 
+interface GrepParams {
+  pattern: string;
+  path?: string;
+  include?: string;
+  ignore_case?: boolean;
+}
+
 interface Match {
   file: string;
   line: number;
   content: string;
+}
+
+function validateParams(params: Record<string, unknown>): ValidationResult {
+  if (typeof params.pattern !== 'string' || params.pattern.trim() === '') {
+    return invalidInput('pattern must be a non-empty string');
+  }
+  if (params.path !== undefined && typeof params.path !== 'string') {
+    return invalidInput('path must be a string');
+  }
+  if (params.include !== undefined && typeof params.include !== 'string') {
+    return invalidInput('include must be a string');
+  }
+  if (params.ignore_case !== undefined && typeof params.ignore_case !== 'boolean') {
+    return invalidInput('ignore_case must be a boolean');
+  }
+  // Validate regex pattern
+  try {
+    new RegExp(params.pattern as string);
+  } catch {
+    return invalidInput(`Invalid regex pattern: ${params.pattern}`);
+  }
+  return validInput(params as Record<string, unknown>);
 }
 
 export const grepTool: Tool = {
@@ -40,14 +70,15 @@ export const grepTool: Tool = {
     required: ['pattern'],
   },
 
+  isReadOnly: () => true,
+
+  validateInput: validateParams,
+
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolResult> {
-    const pattern = params.pattern as string;
-    const searchPath = params.path as string | undefined;
-    const include = (params.include as string) || '**/*';
-    const ignoreCase = (params.ignore_case as boolean) || false;
+    const { pattern, path: searchPath, include = '**/*', ignore_case: ignoreCase = false } = params as unknown as GrepParams;
 
     const cwd = searchPath
       ? isAbsolute(searchPath)
@@ -131,13 +162,6 @@ export const grepTool: Tool = {
       };
     } catch (err) {
       const error = err as Error;
-      if (error.message.includes('Invalid regular expression')) {
-        return {
-          success: false,
-          output: '',
-          error: `Invalid regex pattern: ${pattern}`,
-        };
-      }
       return {
         success: false,
         output: '',

@@ -6,7 +6,20 @@ import type { LLMProvider } from '../providers/types.js';
 export function createAgentTool(provider: LLMProvider): Tool {
   return {
     name: 'agent',
-    description: `Spawn a focused sub-agent. **Call this tool multiple times in a single turn to run agents in parallel** — Argo will execute every agent call in the same turn concurrently and you'll get all results back at once. Use this for fan-out research, splitting independent subtasks, or comparing approaches. Available agents: ${listAgents().map(a => `${a.name} (${a.description})`).join('; ')}`,
+    description: `Spawn a focused sub-agent to do work in parallel with you. Call this tool **multiple times in the same turn** to fan out — every agent call in a turn runs concurrently and all results return together. Reach for it when:
+- you'd otherwise do >3 reads/greps to answer a question (use explorer)
+- a subtask is well-scoped and independent of the rest of the work (use coder/researcher)
+- you want a second pass on something you wrote (use reviewer)
+- a bug needs reproduction + log spelunking (use debugger)
+
+Each agent has no memory of this conversation, so the \`task\` field must be self-contained — include file paths, prior findings, and what "done" looks like.
+
+Available agents:
+- explorer — codebase search; "where is X defined?", "which files reference Y?". Read-only.
+- coder    — implement a focused change. Reads + writes + bash. Best for self-contained edits.
+- reviewer — second-opinion code review. Read-only; reports issues with file:line refs.
+- researcher — web + local research via curl. Synthesizes and cites.
+- debugger — reproduce + diagnose bugs. Bash + reads. Reports root cause.`,
     parameters: {
       type: 'object',
       properties: {
@@ -35,6 +48,7 @@ export function createAgentTool(provider: LLMProvider): Tool {
       if (!agent) {
         return {
           success: false,
+          output: '',
           error: `Unknown agent: ${agentName}. Available: ${listAgents().map(a => a.name).join(', ')}`,
         };
       }
