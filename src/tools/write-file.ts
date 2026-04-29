@@ -1,4 +1,4 @@
-import { writeFile, mkdir, access, constants } from 'fs/promises';
+import { writeFile, mkdir, access, constants, readFile } from 'fs/promises';
 import { resolve, isAbsolute, dirname } from 'path';
 import type { Tool, ToolContext, ToolResult, ValidationResult } from './types.js';
 import { validInput, invalidInput } from './types.js';
@@ -86,6 +86,17 @@ export const writeFileTool: Tool = {
     }
 
     try {
+      // Capture prior contents so the UI can render a diff. Best-effort —
+      // a missing file means this is a fresh write, so priorContent stays
+      // empty and the card renders the new content with `+` prefixes.
+      let priorContent = '';
+      let isNewFile = false;
+      try {
+        priorContent = await readFile(absolutePath, 'utf-8');
+      } catch {
+        isNewFile = true;
+      }
+
       // Ensure parent directory exists
       const dir = dirname(absolutePath);
       await mkdir(dir, { recursive: true });
@@ -99,6 +110,7 @@ export const writeFileTool: Tool = {
       return {
         success: true,
         output: `Successfully wrote ${bytes} bytes (${lines} lines) to ${absolutePath}`,
+        metadata: { priorContent, newContent: content, isNewFile },
       };
     } catch (err) {
       const error = err as NodeJS.ErrnoException;

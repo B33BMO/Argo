@@ -131,6 +131,7 @@ export function App({
       error?: string;
       startTime?: number;
       endTime?: number;
+      metadata?: Record<string, unknown>;
     }>
   >({});
 
@@ -206,6 +207,7 @@ export function App({
             error: result.error,
             startTime,
             endTime: Date.now(),
+            metadata: result.metadata,
           },
         };
       });

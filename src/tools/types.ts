@@ -32,6 +32,12 @@ export interface ToolResult {
   output: string;
   error?: string;
   truncated?: boolean;
+  /**
+   * Structured side-data the UI can render (e.g. prior file content captured
+   * by write_file so the card can show a diff). Tool authors can populate
+   * arbitrary keys; the UI reads only the ones it knows about.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface ValidationResult {

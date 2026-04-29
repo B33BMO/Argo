@@ -11,6 +11,7 @@ export interface ToolStateEntry {
   error?: string;
   startTime?: number;
   endTime?: number;
+  metadata?: Record<string, unknown>;
 }
 
 interface MessageBubbleProps {
@@ -106,6 +107,7 @@ export const MessageBubble = memo(
                     result={st?.result}
                     error={st?.error}
                     duration={duration}
+                    metadata={st?.metadata}
                   />
                 );
               })}

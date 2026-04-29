@@ -18,6 +18,7 @@ import { App } from '../app.js';
 import { createMockProvider } from './mock-provider.js';
 import { SCENARIOS, type Scenario } from './scenarios/index.js';
 import { runWelcomePreview } from './welcome-preview.js';
+import { runDiffPreview } from './diff-preview.js';
 import {
   loadProviders,
   buildProvider,
@@ -196,6 +197,11 @@ async function main() {
 
   if (positional[0] === 'welcome') {
     const code = await runWelcomePreview({ raw });
+    process.exit(code);
+  }
+
+  if (positional[0] === 'diff') {
+    const code = await runDiffPreview({ raw });
     process.exit(code);
   }
 
